@@ -1,0 +1,37 @@
+# Generated build directories and artifacts
+_project/
+_artifacts/
+docs/_*/
+/_bin/**
+/_lib/**
+/_symbols/**
+/bin/**
+/lib/**
+/symbols/**
+
+/_core_sdk/
+
+# Premake
+tools/premake5
+tools/python
+
+# Editor configuration
+.vs/
+.vscode/**
+
+# External dependencies pulled by packman
+external/*
+!external/nvngxota
+
+# APS files
+**/*.aps
+
+# Stored credentials for GTL upload
+credentials.txt
+
+# Other miscellaneous files (deprecated?)
+docs/pages/*
+copy.bat
+mr.bat
+fb.bat
+update.bat

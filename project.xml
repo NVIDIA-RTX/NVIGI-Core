@@ -1,0 +1,17 @@
+<project toolsVersion="6.21">
+	<dependency name="catch2" linkPath="external/catch2">
+		<package name="catch2" version="2.13.9-7011809a" platforms="windows-x86_64"/>
+		<package name="catch2" version="2.13.9-7011809a" platforms="linux-x86_64"/>
+	</dependency>
+	<dependency name="cuda" linkPath="external/cuda">
+		<package name="cuda" version="v12.8.0-windows-x64" platforms="windows-x86_64"/>
+		<package name="cuda-linux-x86_64" version="12.1.0" platforms="linux-x86_64"/>
+	</dependency>
+	<dependency name="nlohmann_json" linkPath="external/json">
+		<package name="nlohmann_json" version="3.10.5.1-b440a32a-windows-x86_64" platforms="windows-x86_64"/>
+		<package name="nlohmann_json" version="3.10.5.1-b440a32a-windows-x86_64" platforms="linux-x86_64"/>
+	</dependency>
+	<dependency name="nvapi" linkPath="external/nvapi">
+		<package name="nvapi" version="r530-public-windows-x86_64" platforms="windows-x86_64"/>
+	</dependency>
+</project>

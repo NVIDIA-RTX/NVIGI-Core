@@ -1,0 +1,14 @@
+{
+  "showConsole": true,
+  "validateDLLs": true,
+  "logLevel": 2,
+  "logMessageDelayMs": 5000,
+  "waitForDebugger": false,
+  "_miniDumpDirectory": "Remove _ and provide EXISTING directory for mini dumps",
+  "_registerPlugins": [ "nvigi.plugin.ace.pipeline" ],
+  "_logPath": "Remove _ and provide path to log",
+  "_pathToPlugins": "Remove _ and provide path to plugins",
+  "_pathToDependencies": "Remove _ and provide path to dependencies",
+  "_forceAdapter": "Remove _ and set to string 1 to simulate a headless system (no graphics adapters), and to a hex string number vendor PCI ID to simulate a single adapter system",
+  "_forceArchitecture": "If forceAdapter is set to a PCI ID, Remove _ and set to a hex string arch number for vendor"
+}

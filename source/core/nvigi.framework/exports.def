@@ -1,0 +1,7 @@
+EXPORTS
+
+	; NVIGI
+	nvigiInit
+	nvigiShutdown
+	nvigiLoadInterface
+	nvigiUnloadInterface
