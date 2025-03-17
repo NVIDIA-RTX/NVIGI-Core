@@ -8,7 +8,6 @@
 
 #include "source/core/nvigi.log/log.h"
 #include "source/core/nvigi.api/nvigi_cuda.h"
-#include "source/core/nvigi.api/nvigi_d3d12.h"
 #include "source/core/nvigi.api/nvigi_result.h"
 #include "source/plugins/nvigi.hwi/cuda/nvigi_hwi_cuda.h"
 
@@ -59,6 +58,7 @@ namespace nvigi
         PushPoppableCudaContext(const nvigi::NVIGIParameter* params)
         {
             auto cudaParams = findStruct<nvigi::CudaParameters>(params);
+#ifdef NVIGI_WINDOWS
             auto d3dParams = findStruct<nvigi::D3D12Parameters>(params);
 
             if (d3dParams && d3dParams->queue)
@@ -81,7 +81,9 @@ namespace nvigi
                 useCudaCtx = true;
                 cudaCtxNeedsRelease = false;
             }
-            else if (cudaParams && cudaParams->context)
+            else
+#endif
+            if (cudaParams && cudaParams->context)
             {
                 cudaCtx = cudaParams->context;
                 useCudaCtx = true;
@@ -145,8 +147,20 @@ namespace nvigi
                 CUdevice deviceZero;
                 CUresult cuerr = cuDeviceGet(&deviceZero, 0);
                 assert(cuerr == CUDA_SUCCESS && "cuDeviceGet failed");
+                if (cuerr != CUDA_SUCCESS)
+                {
+                    NVIGI_LOG_ERROR("cuDeviceGet failed, return code %d", cuerr);
+                    assert(cuerr == CUDA_SUCCESS && "cuDeviceGet failed");
+                    return;
+                }
                 cuerr = cuDevicePrimaryCtxRelease(deviceZero);
                 assert(cuerr == CUDA_SUCCESS && "cuDevicePrimaryCtxRelease failed");
+                if (cuerr != CUDA_SUCCESS)
+                {
+                    NVIGI_LOG_ERROR("cuDevicePrimaryCtxRelease failed, return code %d", cuerr);
+                    assert(cuerr == CUDA_SUCCESS && "cuDevicePrimaryCtxRelease failed");
+                    return;
+                }
             }
 
             if (icig)

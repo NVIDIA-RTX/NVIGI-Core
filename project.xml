@@ -14,4 +14,7 @@
 	<dependency name="nvapi" linkPath="external/nvapi">
 		<package name="nvapi" version="r530-public-windows-x86_64" platforms="windows-x86_64"/>
 	</dependency>
+  <dependency name="cig_scheduler_settings" linkPath="external/cig_scheduler_settings">
+    <package name="cig_scheduler_settings_win64" version="202502282034-446fda24-main" platforms="windows-x86_64"/>
+  </dependency>    
 </project>

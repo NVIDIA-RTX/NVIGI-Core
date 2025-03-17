@@ -18,6 +18,10 @@ namespace tmpl_infer
 }
 }
 
+const char* kTemplateInputSlotA = "inputSlotA";
+const char* kTemplateInputSlotB = "inputSlotB";
+const char* kTemplateInputSlotC = "inputSlotC";
+
 //! IMPORTANT: DO NOT DUPLICATE GUIDs - WHEN CLONING AND REUSING STRUCTURES ALWAYS ASSIGN NEW GUID
 //! 
 //! Run .\tools\nvigi.tool.utils.exe --interface MyInterfaceName and paste new structs here, delete below templates as needed

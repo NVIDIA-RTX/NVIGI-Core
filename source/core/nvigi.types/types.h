@@ -114,7 +114,7 @@ public:
     // Other methods like length, append, etc., can be added as needed.
     bool empty() const
     {
-        return data == nullptr && length == 0;
+        return data == nullptr || length == 0; // "" would be data allocated but length 0
     }
 
     // Substring method

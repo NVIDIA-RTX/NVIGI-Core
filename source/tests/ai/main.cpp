@@ -46,8 +46,13 @@ namespace fs = std::filesystem;
 #else
 #include "source/tests/ai/d3d12.h"
 #include "source/utils/nvigi.wav/wav.h"
-#include "source/plugins/nvigi.hwi/cuda/nvigi_hwi_cuda.h"
+#include "source/utils/nvigi.dsound/recorder.h"
 #endif
+
+#include "source/plugins/nvigi.hwi/cuda/nvigi_hwi_cuda.h"
+
+#include <cuda_runtime.h>
+#include <cuda.h>
 
 namespace nvigi {
 
@@ -100,6 +105,13 @@ struct test_params {
 
     nvigi::system::ISystem* isystem{};
     nvigi::memory::IMemoryManager* imem{};
+    nvigi::IHWICuda* icig{};
+
+#ifdef NVIGI_WINDOWS
+    bool useCiG = true;
+#else
+    bool useCiG = false;
+#endif
 };
 
 test_params params{};
@@ -210,7 +222,9 @@ TEST_CASE("init_split", "[core]")
     std::vector<std::wstring> filesCore = 
     { 
         L"nvigi.core.framework.dll", 
-        L"cudart64_12.dll"
+        L"cudart64_12.dll",
+        L"nvigi.plugin.hwi.common.dll",
+        L"cig_scheduler_settings.dll"
     };
     
     auto corePath = nvigi::moveFilesToTmpLocation(corePathUtf16, filesCore, L"nvigi\\core");
@@ -224,7 +238,7 @@ TEST_CASE("init_split", "[core]")
 
     std::vector<std::wstring> filesHWI =
     {
-        L"nvigi.plugin.hwi.cuda.dll",
+        L"nvigi.plugin.hwi.cuda.dll"
     };
     auto hwiPath = nvigi::moveFilesToTmpLocation(corePathUtf16, filesHWI, L"nvigi\\hwi");
 
@@ -245,6 +259,7 @@ TEST_CASE("init_split", "[core]")
     corePathUtf8 = nvigi::extra::utf16ToUtf8(corePath.c_str());
     auto sdkPathUtf8 = nvigi::extra::utf16ToUtf8(sdkPath.c_str());
     std::vector<const char*> paths;
+    // Note that we are NOT using hwiPath here, we will use it explicitly later when we fetch that interface
     paths.push_back(sdkPathUtf8.c_str());
 
     // Make sure we restore back files if we crash
@@ -279,15 +294,18 @@ TEST_CASE("init_split", "[core]")
 
     // Make sure additional path to plugins works as expected
     auto prevNumPlugins = info->numDetectedPlugins;
-    nvigi::IHWICuda* icig{};
-    nvigiGetInterfaceDynamic(nvigi::plugin::hwi::cuda::kId, &icig, nvigi::params.nvigiLoadInterface, nvigi::extra::utf16ToUtf8(hwiPath.c_str()).c_str());
-    REQUIRE(icig != nullptr);
+    nvigi::IHWICuda* icig0{};
+    // Load the plugin from the additional path
+    nvigiGetInterfaceDynamic(nvigi::plugin::hwi::cuda::kId, &icig0, nvigi::params.nvigiLoadInterface, nvigi::extra::utf16ToUtf8(hwiPath.c_str()).c_str());
+    REQUIRE(icig0 != nullptr);
     nvigi::IHWICuda* icig1{};
+    // Load the same plugin, make sure it is not duplicated
     nvigiGetInterfaceDynamic(nvigi::plugin::hwi::cuda::kId, &icig1, nvigi::params.nvigiLoadInterface, nvigi::extra::utf16ToUtf8(hwiPath.c_str()).c_str());
     REQUIRE(icig1 != nullptr);
+    // hwi.cuda depends on hwi.common, so we should have 2 plugins loaded
     auto newNumPlugins = info->numDetectedPlugins;
-    REQUIRE(newNumPlugins == (prevNumPlugins + 1));
-    result = nvigi::params.nvigiUnloadInterface(nvigi::plugin::hwi::cuda::kId, icig);
+    REQUIRE(newNumPlugins == (prevNumPlugins + 2));
+    result = nvigi::params.nvigiUnloadInterface(nvigi::plugin::hwi::cuda::kId, icig0);
     REQUIRE(result == nvigi::kResultOk);
     result = nvigi::params.nvigiUnloadInterface(nvigi::plugin::hwi::cuda::kId, icig1);
     REQUIRE(result == nvigi::kResultOk);
@@ -296,6 +314,7 @@ TEST_CASE("init_split", "[core]")
     REQUIRE(result == nvigi::kResultOk);
 }
 #endif
+
 
 //! INIT FRAMEWORK
 //! 
@@ -374,6 +393,21 @@ TEST_CASE("init", "[core]")
     nvigiGetInterfaceDynamic(nvigi::core::framework::kId, &nvigi::log::ilog, nvigi::params.nvigiLoadInterface);
     REQUIRE(nvigi::log::ilog != nullptr);
 
+    if (nvigi::params.useCiG)
+    {
+        cuInit(0);
+
+        auto res = nvigiGetInterfaceDynamic(nvigi::plugin::hwi::cuda::kId, &nvigi::params.icig, nvigi::params.nvigiLoadInterface);
+        bool successOrOldDriver = (res == nvigi::kResultOk) || (res == nvigi::kResultDriverOutOfDate);
+        REQUIRE(successOrOldDriver);
+
+        if (res == nvigi::kResultDriverOutOfDate)
+        {
+            NVIGI_LOG_TEST_WARN("Driver cannot support shared CUDA context, rest of test will be skipped");
+            nvigi::params.useCiG = false;
+        }
+    }
+
     NVIGI_LOG_TEST_INFO("Starting unit testing ...");
 }
 
@@ -385,11 +419,17 @@ TEST_CASE("init", "[core]")
 //! 
 #ifdef NVIGI_WINDOWS
 #include "source/plugins/nvigi.hwi/cuda/tests.h"
+#include "source/plugins/nvigi.template.inference.cuda/backend/tests.h"
 #endif
+
+// We test the template tests to make sure that they will compile after the 
+// plugin writer copy-pastes them
+#include "source/plugins/nvigi.template.generic/backend/tests.h"
+#include "source/plugins/nvigi.template.inference/backend/tests.h"
 
 //! TODO: ALL NEW PLUGIN TESTS GO HERE
 //! 
-
+#include "source/utils/nvigi.ai/tests.h"
 
 // DO not add tests after this block without consulting the dev team; active experiments with the CUDA-related tests
 
@@ -397,6 +437,12 @@ TEST_CASE("init", "[core]")
 //! 
 TEST_CASE("shutdown","[core]")
 {
+    if (nvigi::params.icig)
+    {
+        nvigi::Result res = nvigi::params.nvigiUnloadInterface(nvigi::plugin::hwi::cuda::kId, nvigi::params.icig);
+        REQUIRE(res == nvigi::kResultOk);
+    }
+
 #ifdef NVIGI_WINDOWS
     REQUIRE(nvigi::D3D12ContextInfo::GetActiveInstance() == nullptr);
 #endif

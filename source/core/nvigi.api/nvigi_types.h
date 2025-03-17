@@ -114,8 +114,8 @@ struct alignas(8) PluginSpec
     Result status{};
 
     // v2
-    const UID* supportedInterfaces;
-    size_t numSupportedInterfaces;
+    const UID* supportedInterfaces{};
+    size_t numSupportedInterfaces{};
 
     //! v3+ members go here, remember to update the kStructVersionN in the above NVIGI_UID macro!
 };

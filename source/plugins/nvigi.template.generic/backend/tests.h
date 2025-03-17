@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
-#include "source/plugins/nvigi.template/nvigi_template.h"
+#include "source/plugins/nvigi.template.generic/nvigi_template.h"
 
 namespace nvigi
 {

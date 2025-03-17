@@ -3,6 +3,7 @@
 //
 
 #include "source/plugins/nvigi.hwi/cuda/nvigi_hwi_cuda.h"
+#include "source/utils/nvigi.cig_compatibility_checker/CIG_compatibility_checker.h"
 #include <cuda_runtime.h>
 #include <cuda.h>
 
@@ -13,31 +14,23 @@ namespace hwiCuda
 
 TEST_CASE("hwi_cuda", "[hwi],[cuda]")
 {
-    //! Use global params as needed (see source/tests/ai/main.cpp for details and add modify if required)
-    cuInit(0);
-    D3D12ContextInfo* d3dInfo = D3D12ContextInfo::CreateD3D12WindowAndSwapchain(100, 100, false);
-    REQUIRE(d3dInfo != nullptr);
-
-    nvigi::IHWICuda* icuda{};
-    auto res = nvigiGetInterfaceDynamic(plugin::hwi::cuda::kId, &icuda, params.nvigiLoadInterface);
-    bool successOrOldDriver = (res == nvigi::kResultOk) || (res == nvigi::kResultDriverOutOfDate);
-    REQUIRE(successOrOldDriver);
-
     bool runTest = true;
-    if (res == nvigi::kResultDriverOutOfDate)
-    {
-        NVIGI_LOG_TEST_WARN("Driver cannot support shared CUDA context, rest of test will be skipped");
-        runTest = false;
-    }
+    bool compatChecker = false;
 
+    if (!nvigi::params.useCiG)
+        runTest = false;
+
+    nvigi::Result res = nvigi::kResultOk;
+
+    //! Use global params as needed (see source/tests/ai/main.cpp for details and add modify if required)
     CUdevice device{};
     CUcontext cuCtx = nullptr;
     if (runTest)
     {
-        REQUIRE(icuda != nullptr);
+        REQUIRE(nvigi::params.icig != nullptr);
 
         // Set the current context to a known value, the primary context        
-        CUcontext contextBeforeCreate = nullptr;        
+        CUcontext contextBeforeCreate = nullptr;
         CUresult cuerr = cuDeviceGet(&device, 0);
         REQUIRE(cuerr == CUDA_SUCCESS);
         cuerr = cuDevicePrimaryCtxRetain(&contextBeforeCreate, device);
@@ -45,10 +38,11 @@ TEST_CASE("hwi_cuda", "[hwi],[cuda]")
         cuerr = cuCtxSetCurrent(contextBeforeCreate);
         REQUIRE(cuerr == CUDA_SUCCESS);
 
-        nvigi::D3D12Parameters d3dParams;
-        d3dParams.device = d3dInfo->device.Get();
-        d3dParams.queue = d3dInfo->d3d_queue.Get();
-        res = icuda->cudaGetSharedContextForQueue(d3dParams, &cuCtx);
+        nvigi::D3D12Parameters d3dParams = CIGCompatibilityChecker::init(params.nvigiLoadInterface, params.nvigiUnloadInterface);
+
+        res = nvigi::params.icig->cudaGetSharedContextForQueue(d3dParams, &cuCtx);
+        if (res == nvigi::kResultOk)
+            compatChecker = true;
 
         // We don't want cudaGetSharedContextForQueue to change the current CUDA
         // context, we want users to explicitly pass the CIG context to plugins
@@ -59,7 +53,7 @@ TEST_CASE("hwi_cuda", "[hwi],[cuda]")
         REQUIRE(cuerr == CUDA_SUCCESS);
         REQUIRE(contextAfterCreate == contextBeforeCreate);
 
-        successOrOldDriver = (res == nvigi::kResultOk) || (res == nvigi::kResultDriverOutOfDate);
+        bool successOrOldDriver = (res == nvigi::kResultOk) || (res == nvigi::kResultDriverOutOfDate);
         REQUIRE(successOrOldDriver);
         if (res == nvigi::kResultDriverOutOfDate)
         {
@@ -80,18 +74,18 @@ TEST_CASE("hwi_cuda", "[hwi],[cuda]")
         REQUIRE(err == CUDA_SUCCESS);
     }
 
-    delete d3dInfo;
+    if (compatChecker)
+    {
+        REQUIRE(CIGCompatibilityChecker::check());
+    }
 
     if (runTest)
     {
-        res = icuda->cudaReleaseSharedContext(cuCtx);
+        res = nvigi::params.icig->cudaReleaseSharedContext(cuCtx);
         REQUIRE(res == nvigi::kResultOk);
         CUresult err = cuDevicePrimaryCtxRelease(device);
         REQUIRE(err == CUDA_SUCCESS);
     }
-
-    res = params.nvigiUnloadInterface(plugin::hwi::cuda::kId, icuda);
-    REQUIRE(res == nvigi::kResultOk);
 }
 
 //! Add more test cases as needed

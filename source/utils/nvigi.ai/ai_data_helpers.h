@@ -7,6 +7,11 @@
 #include <type_traits>
 #include <string>
 #include <vector>
+#include "source/core/nvigi.extra/extra.h"
+
+#ifdef NVIGI_LINUX
+NVIGI_IGNOREWARNING_WITH_PUSH("-Wcast-qual")
+#endif
 
 namespace nvigi::ai
 {
@@ -22,8 +27,8 @@ bool updateInferenceDataText(InferenceDataText* slot, const std::string& text)
     if (!cpuBuffer || !cpuBuffer->buffer || cpuBuffer->sizeInBytes < text.size())
     {
         return false;
-    }
-    strcpy_s((char*)cpuBuffer->buffer, cpuBuffer->sizeInBytes, text.c_str());
+    }   
+    strcpy_s((char*)cpuBuffer->buffer, cpuBuffer->sizeInBytes, text.c_str());   
     return true;
 }
 
@@ -46,6 +51,10 @@ struct InferenceDataTextHelper
         _slot.utf8Text = _data;
         return &_slot;
     };
+    operator NVIGIParameter* ()
+    {
+        return *(operator InferenceDataText * ());
+    };
 
     InferenceDataText _slot{};
     std::string _text{};
@@ -54,6 +63,8 @@ struct InferenceDataTextHelper
 
 struct InferenceDataByteArrayHelper
 {
+    InferenceDataByteArrayHelper() {};
+
     InferenceDataByteArrayHelper(const uint8_t* data, size_t size)
     {
         _bytes = std::vector(data, data + size);
@@ -68,6 +79,10 @@ struct InferenceDataByteArrayHelper
         _data.sizeInBytes = _bytes.size();
         _slot.bytes = _data;
         return &_slot;
+    };
+    operator NVIGIParameter* ()
+    {
+        return *(operator InferenceDataByteArray * ());
     };
 
     InferenceDataByteArray _slot{};
@@ -94,7 +109,11 @@ struct InferenceDataAudioHelper
         _slot.audio = _data;
         return &_slot;
     };
-
+    operator NVIGIParameter* ()
+    {
+        return *(operator InferenceDataAudio * ());
+    };
+    
     bool hasValidInputBuffer() const
     {
         auto cpuBuffer = castTo<CpuData>(_input.audio);
@@ -309,3 +328,7 @@ struct InferenceDataAudioHelper
 };
 
 }
+
+#ifdef NVIGI_LINUX
+NVIGI_IGNOREWARNING_POP
+#endif

@@ -18,13 +18,16 @@ namespace plugin::hwi::cuda
 // {68E08679-28C6-400C-B9E9-8E8FDBB6426B}
 struct alignas(8) IHWICuda {
     IHWICuda() {}; 
-    NVIGI_UID(UID({ 0x68e08679, 0x28c6, 0x400c,{ 0xb9, 0xe9, 0x8e, 0x8f, 0xdb, 0xb6, 0x42, 0x6b } }), kStructVersion1);
+    NVIGI_UID(UID({ 0x68e08679, 0x28c6, 0x400c,{ 0xb9, 0xe9, 0x8e, 0x8f, 0xdb, 0xb6, 0x42, 0x6b } }), kStructVersion2)
     // The D3D12 device and queue must be set in params
     // If a context exists for the given device and queue, it will be returned.  A new one will not be created
     nvigi::Result(*cudaGetSharedContextForQueue)(const nvigi::D3D12Parameters& params, CUcontext* ctx);
 
     // Must call this before the D3D12 queue is destroyed
     nvigi::Result(*cudaReleaseSharedContext)(CUcontext ctx);
+
+    // Called by plugins to apply the global scheduling mode to their CUDA streams
+    nvigi::Result(*cudaApplyGlobalGpuInferenceSchedulingMode)(CUstream* cudaStreams, size_t cudaStreamsCount);
 };
 
 NVIGI_VALIDATE_STRUCT(IHWICuda)

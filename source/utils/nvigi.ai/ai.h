@@ -74,12 +74,7 @@ inline void processGUIDDirectory(const std::string& guid, const std::u8string& _
             if (std::find(extensions.begin(), extensions.end(), ext) != extensions.end())
             {
                 auto name = files.path().filename().u8string();
-                std::u8string modelPath;
-                if (!file::getOSValidPath(directory + u8"/" + name, modelPath))
-                {
-                    // Should never happen really
-                    return;
-                }
+                std::u8string modelPath = (fs::path(directory) / name).u8string();
                 fileList[ext].push_back(std::string(modelPath.begin(), modelPath.end()));
             }
         }
@@ -105,9 +100,12 @@ inline bool processDirectory(const std::u8string& _directory, json& modelInfo, c
                 auto guid = entry.path().filename().string();
                 if (isGuid(guid))
                 {
-                    auto guidDirectory = directory + u8"/" + std::u8string(guid.begin(),guid.end());
+                    // NOTE: At this point this could be a long path on Windows so '/' slashes are not allowed
+                    // 
+                    // std::filesystem::path / operator will use the correct path separator
+                    auto guidDirectory = fs::path(directory) / std::u8string(guid.begin(),guid.end());
                     std::map<std::string, std::vector<std::string>> fileList{};
-                    processGUIDDirectory(guid,guidDirectory, modelInfo, params, extensions, fileList);
+                    processGUIDDirectory(guid,guidDirectory.u8string(), modelInfo, params, extensions, fileList);
 
                     modelInfo[guid]["guid"] = guid;
                     if (!modelInfo[guid].contains("vram"))

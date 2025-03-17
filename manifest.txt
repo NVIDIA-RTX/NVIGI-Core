@@ -62,6 +62,9 @@
 	nvigi-core-source\source\core\nvigi.thread/thread.h
 	nvigi-core-source\source\core\nvigi.types/tests.h
 	nvigi-core-source\source\core\nvigi.types/types.h
+	nvigi-core-source\source\plugins\nvigi.hwi\common/commonEntry.cpp
+	nvigi-core-source\source\plugins\nvigi.hwi\common/nvigi_hwi_common.h
+	nvigi-core-source\source\plugins\nvigi.hwi\common/premake.lua
 	nvigi-core-source\source\plugins\nvigi.hwi\cuda/cudaEntry.cpp
 	nvigi-core-source\source\plugins\nvigi.hwi\cuda/cuda_scg.cpp
 	nvigi-core-source\source\plugins\nvigi.hwi\cuda/cuda_scg.h
@@ -81,6 +84,13 @@
 	nvigi-core-source\source\plugins\nvigi.template.generic\backend/versions.h
 	nvigi-core-source\source\plugins\nvigi.template.inference/nvigi_template_infer.h
 	nvigi-core-source\source\plugins\nvigi.template.inference/premake.lua
+	nvigi-core-source\source\plugins\nvigi.template.inference.cuda/nvigi_template_infer.h
+	nvigi-core-source\source\plugins\nvigi.template.inference.cuda/premake.lua
+	nvigi-core-source\source\plugins\nvigi.template.inference.cuda\backend/plugin.rc
+	nvigi-core-source\source\plugins\nvigi.template.inference.cuda\backend/resource.h
+	nvigi-core-source\source\plugins\nvigi.template.inference.cuda\backend/templateEntry.cpp
+	nvigi-core-source\source\plugins\nvigi.template.inference.cuda\backend/tests.h
+	nvigi-core-source\source\plugins\nvigi.template.inference.cuda\backend/versions.h
 	nvigi-core-source\source\plugins\nvigi.template.inference\backend/nvcf.h
 	nvigi-core-source\source\plugins\nvigi.template.inference\backend/plugin.rc
 	nvigi-core-source\source\plugins\nvigi.template.inference\backend/resource.h
@@ -96,6 +106,8 @@
 	nvigi-core-source\source\utils\nvigi.ai/ai.h
 	nvigi-core-source\source\utils\nvigi.ai/ai_data_helpers.h
 	nvigi-core-source\source\utils\nvigi.ai/nvigi_ai.h
+	nvigi-core-source\source\utils\nvigi.ai/nvigi_stl_helpers.h
+	nvigi-core-source\source\utils\nvigi.ai/tests.h
 	nvigi-core-source\source\utils\nvigi.cig_compatibility_checker/CIG_compatibility_checker.h
 	nvigi-core-source\source\utils\nvigi.dsound/player.h
 	nvigi-core-source\source\utils\nvigi.dsound/recorder.h

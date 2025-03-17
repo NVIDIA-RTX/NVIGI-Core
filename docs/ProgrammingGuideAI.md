@@ -5,7 +5,7 @@ This guide primarily focuses on the general use of the AI plugins performing loc
 
 > **IMPORTANT**: This guide might contain pseudo code, for the up to date implementation and source code which can be copy pasted please see the [basic sample](../source/samples/nvigi.basic/basic.cpp)
 
-## Version 1.0.0 Release
+## Version 1.1.0 Release
 
 ## Table of Contents
 - [Introduction](#introduction)
@@ -285,6 +285,8 @@ For 3rd party cloud solutions, like for example OpenAI, please have a look at th
 
 ## Common And Custom Capabilities and Requirements
 
+> **IMPORTANT NOTE**: This section covers a scenario where the host application can instantiate models that were not included when the application was packaged and shipped. If the models and their capabilities are predefined and there is no need for dynamically downloaded models, you can skip to the next section.
+
 If host application needs to find out more information about the available models in the above mentioned repository, the `InferenceInterface` provides `getCapsAndRequirements` API which returns feature specific (if any) caps and requirements and common caps and requirements shown below:
 
 ```cpp
@@ -385,7 +387,10 @@ common.modelGUID = "{E9102ACB-8CD8-4345-BCBF-CCF6DC758E58}"; // gpt-3.5-turbo
 //! GPT parameters
 nvigi::GPTCreationParameters gptCreationParams{};
 // TODO: Set some GPT specific items here
-gptCreationParams.chain(common);
+if(NVIGI_FAILED(gptCreationParams.chain(common)))
+{
+  // Handle error
+}
 
 //! Cloud parameters
 RESTParameters cloudParams{};
@@ -395,8 +400,10 @@ cloudParams.url = "https://api.openai.com/v1/chat/completions";
 cloudParams.authenticationToken = token.c_str();
 cloudParams.verboseMode = true;
 
-gptCreationParams.chain(cloudParams); // Chaining cloud parameters!
-
+if(NVIGI_FAILED(gptCreationParams.chain(cloudParams))) // Chaining cloud parameters!
+{
+  // Handle error
+}
 nvigi::InferenceInstance* instance{};
 igpt->createInstance(gptCreationParams, &instance);
 ```
@@ -442,7 +449,10 @@ d3d12Params.queue = <your (graphics) ID3D12CommandQueue*>
 // Chain the D3D12 parameters to any creation parameters when generating local instance
 
 // For example, local GPT using GGML backed and CUDA API (NOT CPU)
-gptCreationParams.chain(d3d12Parameters);
+if(NVIGI_FAILED(gptCreationParams.chain(d3d12Parameters)))
+{
+  // Handle error
+}
 ```
 
 ## Data Types
@@ -459,12 +469,17 @@ The underlying raw data can be either on the CPU or GPU so it is represented by 
 * `D3D12Data`
 * `VulkanData`
 
-For example, this is how one would setup audio data located on the CPU:
+For example, this is how one would setup some audio data located on the CPU using the STL helpers from `nvigi_stl_helpers.h`
 
 ```cpp
-std::vector<int16> my_audio = recordMyAudio();
-nvigi::CpuData _audio{my_audio.size() * sizeof(int16_t), my_audio.data()}; 
-nvigi::InferenceDataAudio audioData{_audio};
+std::vector<int16> my_audio = recordMyMonoAudio();
+// Auto convert to the underlying `InferenceDataAudio`, single channel, PCM16
+nvigi::InferenceDataAudioSTLHelper audioData(my_audio, 1);
+```
+Another example, this time setting up a prompt for the GPT plugin:
+```cpp
+std::string text = "Hello World!";
+nvigi::InferenceDataTextSTLHelper userPrompt(text);
 ```
 
 ## Input Slots
@@ -472,10 +487,11 @@ nvigi::InferenceDataAudio audioData{_audio};
 Once we have our instance we need to provide input data slots that match the input signature for the given instance. The `InferenceInstance` provides and API to obtain input and output signatures at runtime but they can also be obtained from plugin's headers and source code. In this guide we will use the Automated Speech Recognition (ASR) as an example.
 
 ```cpp
-//! Audio data slot is coming from our previous step
-std::vector<nvigi::InferenceDataSlot> slots = { {nvigi::kASRDataSlotAudio, &audioData} };
+//! Audio data slot is coming from our previous step, note that we are using operator to convert audioData to InferenceDataAudio*
+std::vector<nvigi::InferenceDataSlot> slots = { {nvigi::kASRDataSlotAudio, audioData} };
 nvigi::InferenceDataSlotArray inputs = { slots.size(), slots.data() }; // Input slots
 ```
+> NOTE: STL helpers provide an operator which automatically converts data to the underlying low level type used by NVIGI
 
 ## Execution Context
 

@@ -239,9 +239,13 @@ if __name__ == '__main__':
     
         # Install CUDA runtime to all configs
         cudaRt = src/'external/cuda/bin/cudart64_12.dll'
+        cupti = src/'external/cuda/extras/CUPTI/lib64/cupti64_2025.1.0.dll'
+        cig_settings = src/'external/cig_scheduler_settings/bin/Release_x64/cig_scheduler_settings.dll'
         if os.path.exists(cudaRt):
             for config in config_list:
                 copy_list += CopySelect(cudaRt, dest_root/f'bin/{config}')
+                copy_list += CopySelect(cupti, dest_root/f'bin/{config}')
+                copy_list += CopySelect(cig_settings, dest_root/f'bin/{config}')
 
     # Next, the rest - docs, source, scripts, etc
     if args.config == 'runtime':

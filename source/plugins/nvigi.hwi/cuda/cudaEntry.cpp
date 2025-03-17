@@ -4,11 +4,15 @@
 
 #include "source/core/nvigi.api/nvigi.h"
 #include "source/core/nvigi.api/internal.h"
+#include "source/core/nvigi.api/nvigi_security.h"
 #include "source/core/nvigi.log/log.h"
+#include "source/core/nvigi.file/file.h"
 #include "source/core/nvigi.exception/exception.h"
 #include "source/core/nvigi.plugin/plugin.h"
 #include "source/plugins/nvigi.hwi/cuda/versions.h"
+#include "source/plugins/nvigi.hwi/common/nvigi_hwi_common.h"
 #include "_artifacts/gitVersion.h"
+#include "cig_scheduler_settings.h"
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -21,30 +25,34 @@ namespace nvigi
 
 namespace hwiCuda
 {
+struct CudaContext
+{
+    NVIGI_PLUGIN_CONTEXT_CREATE_DESTROY(CudaContext);
 
-    struct CudaContext
+    void onCreateContext()
     {
-        NVIGI_PLUGIN_CONTEXT_CREATE_DESTROY(CudaContext);
-
-        void onCreateContext()
-        {
-        };
-
-        void onDestroyContext()
-        {
-        };
-
-        IHWICuda api{};
-
-        struct CudaContextInfo
-        {
-            CUcontext ctx{};
-            int64_t refcount{};
-        };
-
-        std::map<ID3D12CommandQueue*, CudaContextInfo> contextMap;
     };
 
+    void onDestroyContext()
+    {
+    };
+
+    IHWICuda api{};
+        
+    struct CudaContextInfo
+    {
+        CUcontext ctx{};
+        int64_t refcount{};
+    };
+
+    std::map<ID3D12CommandQueue*, CudaContextInfo> contextMap;
+
+    IHWICommon* hwiCommon;
+
+    CigSchedulerSettingsAPI sched;
+
+    HMODULE cigHelper{};
+};
 };
 
 //! Define our plugin
@@ -102,6 +110,33 @@ static nvigi::Result cudaReleaseSharedContext(CUcontext cuCtx)
     return kResultInvalidParameter;
 }
 
+static nvigi::Result cudaApplyGlobalGpuInferenceSchedulingMode(CUstream* cudaStreams, size_t cudaStreamsCount)
+{
+    if(cudaStreams == nullptr)
+        return nvigi::kResultInvalidParameter;
+
+    auto& ctx = (*hwiCuda::getContext());
+
+    uint32_t schedulingMode;
+    ctx.hwiCommon->GetGpuInferenceSchedulingMode(&schedulingMode);
+
+    // Check that the public and private enum types are equal
+    static_assert(int(CigWorkloadType::CIG_WORKLOAD_FOREGROUND) ==
+        int(SchedulingMode::kPrioritizeCompute));
+    static_assert(int(CigWorkloadType::CIG_WORKLOAD_BACKGROUND) ==
+        int(SchedulingMode::kBalance));
+    static_assert(int(CigWorkloadType::CIG_WORKLOAD_BACKGROUND_WITH_THROTTLE) ==
+        int(SchedulingMode::kPrioritizeGraphics));
+
+    CUresult okSoFar = CUDA_SUCCESS;
+    for (size_t i = 0; okSoFar == CUDA_SUCCESS && i != cudaStreamsCount; i++)
+    {
+        okSoFar = ctx.sched.StreamSetWorkloadType(cudaStreams[i], CigWorkloadType(schedulingMode));
+    }
+
+    return okSoFar;
+}
+
 //! Making sure our implementation is covered with our exception handler
 //! 
 namespace hwiCuda
@@ -115,6 +150,11 @@ namespace hwiCuda
     static nvigi::Result ReleaseSharedContext(CUcontext cuCtx)
     {
         NVIGI_CATCH_EXCEPTION(cudaReleaseSharedContext(cuCtx));
+    }
+
+    static nvigi::Result ApplyGlobalGpuInferenceSchedulingMode(CUstream* cudaStreams, size_t cudaStreamsCount)
+    {
+        NVIGI_CATCH_EXCEPTION(cudaApplyGlobalGpuInferenceSchedulingMode(cudaStreams, cudaStreamsCount));
     }
 } // namespace hwiCuda
 
@@ -170,9 +210,46 @@ Result nvigiPluginRegister(framework::IFramework* framework)
     //! Note that we are exporting functions with the exception handler enabled
     ctx.api.cudaGetSharedContextForQueue = hwiCuda::GetSharedContextForQueue;
     ctx.api.cudaReleaseSharedContext = hwiCuda::ReleaseSharedContext;
+    ctx.api.cudaApplyGlobalGpuInferenceSchedulingMode = hwiCuda::ApplyGlobalGpuInferenceSchedulingMode;
 
     framework->addInterface(plugin::hwi::cuda::kId, &ctx.api, 0);
     
+    // This is a dependency so make sure to provide path to dependencies if SDK is split up in different locations
+    auto dependenciesPath = framework->getUTF8PathToDependencies();
+    if (dependenciesPath.empty())
+    {
+        // Path to dependencies not provided, in this scenario hwi.common plugin must be next to this plugin
+        dependenciesPath = extra::utf16ToUtf8(file::getModulePath().c_str()).c_str();
+    }
+    if (!framework::getInterface(plugin::getContext()->framework, nvigi::plugin::hwi::common::kId, &ctx.hwiCommon, dependenciesPath.c_str()))
+    {
+        NVIGI_LOG_ERROR("Get plugin::hwi::common interface failed");
+        return kResultMissingDynamicLibraryDependency;
+    }
+
+    // Always load DLLs with full path and check signatures in production
+    auto dependenciesPathW = extra::utf8ToUtf16(dependenciesPath.c_str());
+#ifdef NVIGI_PRODUCTION
+    if (!security::verifyEmbeddedSignature((dependenciesPathW + L"/cig_scheduler_settings.dll").c_str()))
+    {
+        NVIGI_LOG_ERROR("'cig_scheduler_settings.dll' must be digitally signed");
+        return kResultInvalidState;
+    }
+#endif
+    ctx.cigHelper = LoadLibraryW((dependenciesPathW + L"/cig_scheduler_settings.dll").c_str());
+    if (ctx.cigHelper)
+    {
+        ctx.sched.StreamSetWorkloadType = (PFun_StreamSetWorkloadType*)GetProcAddress(ctx.cigHelper, "StreamSetWorkloadType");
+        ctx.sched.ContextSetDefaultWorkloadType = (PFun_ContextSetDefaultWorkloadType*)GetProcAddress(ctx.cigHelper, "ContextSetDefaultWorkloadType");
+        ctx.sched.StreamGetWorkloadType = (PFun_StreamGetWorkloadType*)GetProcAddress(ctx.cigHelper, "StreamGetWorkloadType");
+        ctx.sched.ContextGetDefaultWorkloadType = (PFun_ContextGetDefaultWorkloadType*)GetProcAddress(ctx.cigHelper, "ContextGetDefaultWorkloadType");
+        ctx.sched.WorkloadTypeGetName = (PFun_WorkloadTypeGetName*)GetProcAddress(ctx.cigHelper, "WorkloadTypeGetName");
+    }
+    else
+    {
+        return kResultMissingDynamicLibraryDependency;
+    }
+
     return kResultOk;
 }
 
@@ -181,6 +258,11 @@ Result nvigiPluginRegister(framework::IFramework* framework)
 Result nvigiPluginDeregister()
 {
     auto& ctx = (*hwiCuda::getContext());
+
+    framework::releaseInterface(plugin::getContext()->framework, nvigi::plugin::hwi::common::kId, ctx.hwiCommon);
+
+    // We know this is a valid handle otherwise plugin register would have failed
+    FreeLibrary(ctx.cigHelper);
 
     //! Do any other shutdown tasks here
     return kResultOk;

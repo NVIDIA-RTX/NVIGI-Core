@@ -5,7 +5,7 @@ This guide primarily focuses on the general use of the In-Game Inferencing, incl
 
 > **IMPORTANT**: This guide might contain pseudo code, for the up to date implementation and source code which can be copy pasted please see the [basic sample](../source/samples/nvigi.basic/basic.cpp)
 
-## Version 1.0.0 Release
+## Version 1.1.0 Release
 
 ## Table of Contents
 - [Introduction](#introduction)
@@ -65,7 +65,10 @@ params.seed = -1;
 ```
 Note that we are chaining common properties to our main properties like this:
 ```cpp
-    params.chain(common);
+    if(NVIGI_FAILED(params.chain(common)))
+    {
+        // Handle error
+    }
 ```
 Now we provide additional information about D3D12 context, assuming the host application is using D3D graphics API:
 ```cpp
@@ -76,7 +79,10 @@ d3d12Params.queue = myQueue;
 ```
 Then we chain it together like this:
 ```cpp
-    params.chain(d3d12Params);
+    if(NVIGI_FAILED(params.chain(d3d12Parameters)))
+    {
+        // Handle error
+    }
 ```
 Finaly, we end up with the following chained input structure which can be provided to NVIGI inteface(s) for processing:
 ```cpp
@@ -97,7 +103,10 @@ nvigiGetInterface(nvigi::plugin::gpt::ggml::cuda::kId, &igpt, params.nvigiLoadIn
 nvigi::GPTCreationParameters params{};
 common.utf8PathToModels = myPathToModelRepo;
 //! Chain it together so GPT interface can find it
-params.chain(common);
+if(NVIGI_FAILED(params.chain(common)))
+{
+    // Handle error
+}
 
 //! Now we obtain capabilities and requirements for this instance, again as typed and versioned structure but containing just data
 nvigi::CommonCapabilitiesAndRequirements* caps{};
@@ -113,7 +122,10 @@ if (sampler)
     //!
     //! They can be modified as needed and chained to the nvigi::GPTCreationParameters when creating an instance
     sampler->penalizeNewLine = true;
-    params.chain(sampler);
+    if(NVIGI_FAILED(params.chain(sampler)))
+    {
+        // Handle error
+    }
 }
 ```
 > NOTE: In this example, since interface in question supports `nvigi::GPTSamplerParameters`, sampler parameters can be chained together with the `nvigi::GPTCreationParameters` and serve as input (see the [above section](#input-data)) if it is required to change any sampler related options when creating the instance.

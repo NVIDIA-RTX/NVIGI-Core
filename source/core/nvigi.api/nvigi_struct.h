@@ -6,6 +6,9 @@
 
 #include <stdint.h>
 #include <type_traits>
+#include <assert.h>
+
+#include "nvigi_result.h"
 
 namespace nvigi
 {
@@ -106,7 +109,10 @@ static_assert(std::alignment_of<PluginID>::value == 8, "NVIGI structure must hav
 //! 
 //! S1 s1;
 //! S2 s2
-//! s1.chain(s2); // optional parameters in S2
+//! if(NVIGI_FAILED(s1.chain(s2))) // optional parameters in S2
+//! {
+//!     // Handle error
+//! }
 
 //! IMPORTANT: 
 //! 
@@ -122,6 +128,9 @@ constexpr uint32_t kStructVersion5 = 5;
 constexpr uint32_t kStructVersion6 = 6;
 constexpr uint32_t kStructVersion7 = 7;
 constexpr uint32_t kStructVersion8 = 8;
+
+//! Maximum number of chained structures
+constexpr uint32_t kMaxNumChainedStructs = 16;
 
 struct alignas(8) BaseStructure
 {
@@ -140,7 +149,16 @@ using NVIGIParameter = BaseStructure;
     UID getType() const { return _base.type;}                                                                         \
     inline operator BaseStructure* () { return &_base;}                                                               \
     inline operator const BaseStructure* () const { return &_base;}                                                   \
-    inline void chain(BaseStructure* next) { if(_base.next) next->next = _base.next; _base.next = next;}              \
+    inline Result chain(BaseStructure* next)                                                                          \
+    {                                                                                                                 \
+        assert(next);                                                                                                 \
+        if(!next) return kResultInvalidParameter;                                                                     \
+        assert(!next->next); /* Cannot chain struct that is already part of another chain */                          \
+        if(next->next) return kResultInvalidParameter;                                                                \
+        if(_base.next) next->next = _base.next;                                                                       \
+        _base.next = next;                                                                                            \
+        return kResultOk;                                                                                             \
+    }                                                                                                                 \
     constexpr static UID s_type = guid;
 
 #define NVIGI_VALIDATE_STRUCT(S)                                                                                      \
@@ -170,9 +188,14 @@ const T* castTo(const BaseStructure* base)
 template<typename T>
 const T* findStruct(const BaseStructure* base)
 {
+    // Cannot exceed kMaxNumChainedStructs
+    uint32_t i = 0;
     while (base && base->type != T::s_type)
     {
         base = static_cast<const BaseStructure*>(base->next);
+        i++;
+        assert(i < kMaxNumChainedStructs);
+        if (i >= kMaxNumChainedStructs) return nullptr;
     }
     return (const T*)base;
 }
@@ -180,9 +203,14 @@ const T* findStruct(const BaseStructure* base)
 template<typename T>
 T* findStruct(BaseStructure* base)
 {
+    // Cannot exceed kMaxNumChainedStructs
+    uint32_t i = 0;
     while (base && base->type != T::s_type)
     {
         base = static_cast<BaseStructure*>(base->next);
+        i++;
+        assert(i < kMaxNumChainedStructs);
+        if (i >= kMaxNumChainedStructs) return nullptr;
     }
     return (T*)base;
 }
@@ -191,9 +219,14 @@ T* findStruct(BaseStructure* base)
 template<typename T, typename S>
 const T* findStruct(const BaseStructure* base)
 {
+    // Cannot exceed kMaxNumChainedStructs
+    uint32_t i = 0;
     while (base && base->type != T::s_type)
     {
         base = static_cast<const BaseStructure*>(base->next);
+        i++;
+        assert(i < kMaxNumChainedStructs);
+        if (i >= kMaxNumChainedStructs) return nullptr;
 
         // If we find a struct of type S, we know should stop the search
         if (base->type == S::s_type)
@@ -211,9 +244,14 @@ T* findStruct(const void** ptr, uint32_t count)
     for (uint32_t i = 0; base == nullptr && i < count; i++)
     {
         base = static_cast<const BaseStructure*>(ptr[i]);
+        // Cannot exceed kMaxNumChainedStructs
+        uint32_t n = 0;
         while (base && base->type != T::s_type)
         {
             base = static_cast<const BaseStructure*>(base->next);
+            n++;
+            assert(n < kMaxNumChainedStructs);
+            if (n >= kMaxNumChainedStructs) return nullptr;
         }
     }
     return (T*)base;
@@ -236,5 +274,13 @@ inline bool isOlderStruct(const T* _in)
     T tmp;
     return _in->version < tmp.version;
 }
+
+#ifdef __GNUC__
+#define NVIGI_DEPRECATED(func, hint) func __attribute__((deprecated(hint)))
+#elif defined(_MSC_VER)
+#define NVIGI_DEPRECATED(func, hint) __declspec(deprecated(hint)) func
+#else
+#define NVIGI_DEPRECATED(func, hint) func
+#endif
 
 } // namespace nvigi

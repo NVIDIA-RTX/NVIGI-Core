@@ -5,6 +5,9 @@
 
 #include <cupti.h>
 #include <unordered_set>
+#ifdef NVIGI_WINDOWS
+#include <cig_scheduler_settings.h>
+#endif
 
 #include "nvigi_cuda.h"
 #include "nvigi_hwi_cuda.h"
@@ -52,6 +55,10 @@ namespace CIGCompatibilityChecker
         std::unordered_set<CUcontext> cigContextsUsed;
         std::unordered_set<uint32_t> unhandledCudaApiFunctionIds;
 
+        // Priority setting checker
+        std::array<std::atomic<size_t>, CIG_WORKLOAD_MAX> launchesOfType = { 0,0,0 };
+        bool launchesOfTypeIsValid = false;
+
         void reset()
         {
             // Note that we deliberately don't reset nonCigContextsCreated and cigContextsCreated
@@ -68,6 +75,7 @@ namespace CIGCompatibilityChecker
     CUcontext gCtxBeforeTest{};
     CUpti_SubscriberHandle gCuptiSubscriber{};
     nvigi::D3D12Parameters gD3dParameters{};
+    CigSchedulerSettingsAPI sched{};
 
 #define checkCuErrors(err)  __checkCuErrors (err, __FILE__, __LINE__)
     inline void __checkCuErrors(CUresult err, const char* file, const int line)
@@ -236,6 +244,19 @@ namespace CIGCompatibilityChecker
 
         nvigiUnloadInterface(nvigi::plugin::hwi::cuda::kId, icig);
 
+        HMODULE dll = LoadLibraryA("cig_scheduler_settings.dll");
+        if (!dll)
+        {
+            printf("Error loading cig_scheduler_settings.dll\n");
+            exit(EXIT_FAILURE);
+        }
+
+        sched.StreamSetWorkloadType = (PFun_StreamSetWorkloadType*)GetProcAddress(dll, "StreamSetWorkloadType");
+        sched.ContextSetDefaultWorkloadType = (PFun_ContextSetDefaultWorkloadType*)GetProcAddress(dll, "ContextSetDefaultWorkloadType");
+        sched.StreamGetWorkloadType = (PFun_StreamGetWorkloadType*)GetProcAddress(dll, "StreamGetWorkloadType");
+        sched.ContextGetDefaultWorkloadType = (PFun_ContextGetDefaultWorkloadType*)GetProcAddress(dll, "ContextGetDefaultWorkloadType");
+        sched.WorkloadTypeGetName = (PFun_WorkloadTypeGetName*)GetProcAddress(dll, "WorkloadTypeGetName");
+
         {
             cuerr = cuCtxSetCurrent(cigContext);
             checkCuErrors(cuerr);
@@ -305,6 +326,20 @@ namespace CIGCompatibilityChecker
                 printf("%p ", context);
             }
             printf("\n");
+        }
+
+        if (gCheckerState.launchesOfTypeIsValid)
+        {
+            printf("CIG Info: Launches of each workload type: \n");
+            for (int i = 0; i != CIG_WORKLOAD_MAX; i++)
+            {
+                size_t launchCount = gCheckerState.launchesOfType[i];
+                printf("%30s: %zu\n", sched.WorkloadTypeGetName(CigWorkloadType(i)), launchCount);
+            }
+        }
+        else
+        {
+            printf("CIG Info: Could not test CIG priorities. Please use 575 driver or higher\n");
         }
 
 #if ENABLE_VERBOSE_CIG_LOGGING
@@ -463,7 +498,7 @@ namespace CIGCompatibilityChecker
 
         if (domain == CUPTI_CB_DOMAIN_DRIVER_API)
         {
-            if (pCallbackData->callbackSite == CUPTI_API_EXIT)
+            if (pCallbackData->callbackSite == CUPTI_API_ENTER)
             {
                 if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuMemcpyHtoD || // 43
                     callbackId == CUPTI_DRIVER_TRACE_CBID_cu64MemcpyHtoD || // 44
@@ -549,8 +584,58 @@ namespace CIGCompatibilityChecker
                     {
                         pCheckerState->nonCigContextsUsed.insert(pCallbackData->context);
                     }
+
+                    if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel || // 307
+                        callbackId == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel_ptsz || // 442
+                        callbackId == CUPTI_DRIVER_TRACE_CBID_cuGraphLaunch || // 514
+                        callbackId == CUPTI_DRIVER_TRACE_CBID_cuGraphLaunch_ptsz) // 653
+                    {
+                        CUstream stream{};
+
+                        if (pCallbackData->functionParams)
+                        {
+                            if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel) // 307
+                            {
+                                cuLaunchKernel_params* params = (cuLaunchKernel_params*)pCallbackData->functionParams;
+                                stream = params->hStream;
+                            }
+                            else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel_ptsz) // 442
+                            {
+                                cuLaunchKernel_ptsz_params* params = (cuLaunchKernel_ptsz_params*)pCallbackData->functionParams;
+                                stream = params->hStream;
+                            }
+                            else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuGraphLaunch) // 514
+                            {
+                                cuGraphLaunch_params* params = (cuGraphLaunch_params*)pCallbackData->functionParams;
+                                stream = params->hStream;
+                            }
+                            else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuGraphLaunch_ptsz) // 515
+                            {
+                                cuGraphLaunch_ptsz_params* params = (cuGraphLaunch_ptsz_params*)pCallbackData->functionParams;
+                                stream = params->hStream;
+                            }
+                        }
+
+                        if (stream)
+                        {
+                            CigWorkloadType workloadType;
+                            CUresult cuerr = sched.StreamGetWorkloadType(stream, &workloadType);
+
+                            // The preceding call can fail, for example if the user doesn't have the right driver
+                            if (cuerr == CUDA_SUCCESS)
+                            {
+                                pCheckerState->launchesOfType[workloadType]++;
+
+                                // We only check launchesOfType at the end of the test if the driver etc. was ok
+                                pCheckerState->launchesOfTypeIsValid = true;
+                            }
+                        }
+                    }
                 }
-                else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuCtxCreate ||
+            }
+            else if(pCallbackData->callbackSite == CUPTI_API_EXIT)
+            {
+                if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuCtxCreate ||
                     callbackId == CUPTI_DRIVER_TRACE_CBID_cuCtxCreate_v2 ||
                     callbackId == CUPTI_DRIVER_TRACE_CBID_cuCtxCreate_v3)
                 {
@@ -605,11 +690,22 @@ namespace CIGCompatibilityChecker
         }
     }
 
+    // Each plugin may do CUDA work in createInstance before it sets the CIG priority, so we
+    // provide a way to reset the counters to count only work done after createInstance
+    void resetLaunchCounters()
+    {
+        for (int i = 0; i != CIG_WORKLOAD_MAX; i++)
+        {
+            gCheckerState.launchesOfType[i] = 0;
+        }
+    }
 #else
-    nvigi::D3D12Parameters init(PFun_nvigiLoadInterface* nvigiLoadInterface, PFun_nvigiUnloadInterface* nvigiUnloadInterface)
+    nvigi::D3D12Parameters init(PFun_nvigiLoadInterface*, PFun_nvigiUnloadInterface*)
     {
         return nvigi::D3D12Parameters{};
     }
+
+    void resetLaunchCounters() {}
 
     // Call at end of test
     bool check() { return true; }

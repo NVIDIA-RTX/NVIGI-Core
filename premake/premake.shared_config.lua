@@ -49,8 +49,9 @@
     filter {"system:linux"}
 		defines { "NVIGI_SDK", "NVIGI_LINUX" }
 		-- stop on first error
+		enablewarnings "shadow"
 		buildoptions {"-std=c++2b", "-Wfatal-errors","-fPIC", "-Wall", "-Wextra" , "-Wpedantic", "-Wcast-qual", "-Wdouble-promotion",
-				      "-Wshadow",  "-Wpointer-arith", "-pthread", "-march=native", "-mtune=native", "-fvisibility=hidden","-finput-charset=UTF-8", "-fexec-charset=UTF-8"}					  
+				      "-Wpointer-arith", "-pthread", "-march=native", "-mtune=native", "-fvisibility=hidden","-finput-charset=UTF-8", "-fexec-charset=UTF-8"}					  
         linkoptions { "-Wl,--no-undefined" }
     filter { "files:**.cpp", "system:linux"}
     	buildoptions {"-fpermissive","-Wstrict-prototypes","-Wmissing-prototypes"}

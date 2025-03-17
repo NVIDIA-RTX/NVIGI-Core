@@ -92,4 +92,3 @@ for %%c in (%cfgs%) do (
         msbuild .\_project\vs2017\nvigicoresdk.sln /m /t:%bld% /property:Configuration=%%c
     )
 )
-endlocal

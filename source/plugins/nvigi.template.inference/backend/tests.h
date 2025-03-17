@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
-#include "source/plugins/nvigi.template/nvigi_template.h"
+#include "source/plugins/nvigi.template.inference/nvigi_template_infer.h"
 
 namespace nvigi
 {
@@ -12,7 +12,7 @@ namespace tmpl
 //! 
 //! This allows easy unit test filtering as described here https://github.com/catchorg/Catch2/blob/devel/docs/command-line.md#specifying-which-tests-to-run
 //! 
-TEST_CASE("template_backend", "[tag1],[tag2]")
+TEST_CASE("template_backend_inference", "[tag1],[tag2]")
 {
     //! Use global params as needed (see source/tests/ai/main.cpp for details and add modify if required)
 

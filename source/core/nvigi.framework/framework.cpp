@@ -386,6 +386,7 @@ size_t enumeratePlugins(const char8_t* utf8Directory, bool validateDLLs, const n
                 if (!system::validateDLL(entry.path().wstring().c_str(), utf16DependeciesDirectories, pluginDependencies))
                 {
                     NVIGI_LOG_WARN("Skipping plugin '%s' due to validation errors", name.c_str());
+                    spec.status = kResultMissingDynamicLibraryDependency;
                     continue;
                 }
 #ifndef NVIGI_PRODUCTION
@@ -781,12 +782,19 @@ nvigi::Result nvigiInitImpl(const nvigi::Preferences& pref, nvigi::PluginAndSyst
     {
         if (!fs::is_directory(ctx->utf8PathToPlugins))
         {
-            NVIGI_LOG_ERROR("'%s' is not a valid directory", ctx->utf8PathToPlugins.c_str());
+            // This can happen in ReShade, if we use relative path but app sets working directory to something else SDK will fail to find plugins
+            NVIGI_LOG_WARN("'%s' is NOT a valid directory, trying as relative path to the executable ...", ctx->utf8PathToPlugins.c_str());
+            fs::path pathToPlugins(nvigi::file::getExecutablePath() + nvigi::extra::utf8ToUtf16(ctx->utf8PathToPlugins.c_str()));
+            if (fs::is_directory(pathToPlugins))
+            {
+                ctx->utf8PathToPlugins = pathToPlugins.string();
+            }
+            else
+            {
+                NVIGI_LOG_ERROR("'%s' also NOT a valid directory", pathToPlugins.c_str());
+            }
         }
-        else
-        {
-            enumeratePlugins((const char8_t*)ctx->utf8PathToPlugins.c_str(), validateDLLs);
-        }
+        enumeratePlugins((const char8_t*)ctx->utf8PathToPlugins.c_str(), validateDLLs);
     }
     else
 #endif
@@ -966,8 +974,8 @@ nvigi::Result nvigiLoadInterfaceImpl(nvigi::PluginID feature, const nvigi::UID& 
 
     if (list.empty())
     {
-        // No interfaces for this feature, check if user provided new path
-        if (utf8PathToPlugin) try
+        // No interfaces for this feature, check if we never saw this plugin before and user provided new path to find it
+        if (ctx->modules.find(feature) == ctx->modules.end() && utf8PathToPlugin) try
         {
             std::string utf8Path;
             // On Win this can alter the path to handle long paths (over MAX_PATH) and convert symlinks, relative paths to absolute etc.

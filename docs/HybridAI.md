@@ -92,7 +92,7 @@ Once instance is created and all inputs for it have been generated and provided,
 
 Here is an example of a potential optimization in case of the `ACE` pipeline:
 
-* Host can create local (CPU/GPU) instances for the `ASR`, `GPT`, `textToSpeech` for example
+* Host can create local (CPU/GPU) instances for the `ASR`, `GPT`, `textToSpeech`, `audio2face` and `audio2emotion` for example
 * If latency is too high, there is not enough VRAM NVIGI can decide to offload certain stages to the cloud as show in the diagram below
 
 ```{image} media/hybridai_ace_pipeline.svg

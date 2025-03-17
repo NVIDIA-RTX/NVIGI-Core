@@ -5,6 +5,7 @@
 #pragma once
 
 #include <nvigi_struct.h>
+#include <nvigi_stl_helpers.h>
 
 namespace nvigi
 {
@@ -106,14 +107,14 @@ RecordingInfo* startRecordingAudio()
     return infoPtr;
 }
 
-bool stopRecordingAudio(RecordingInfo* infoPtr, nvigi::InferenceDataAudio* wavData)
+bool stopRecordingAudio(RecordingInfo* infoPtr, nvigi::InferenceDataAudioSTLHelper* wavData)
 {
     if (!infoPtr)
         return false;
     RecordingInfo info = *infoPtr;
 
     if (!isRecording) return false;
-    if (!wavData || !wavData->audio)
+    if (!wavData)
         return false;
 
     isRecording.store(false);
@@ -130,18 +131,12 @@ bool stopRecordingAudio(RecordingInfo* infoPtr, nvigi::InferenceDataAudio* wavDa
 
     DWORD dataSize = info.bytesWritten + 36;
 
-    static size_t s_written = 0;
-    static std::vector<uint8_t> s_buffer;
-
-    auto write = [](const char* data, size_t count)->void
+    std::vector<int8_t> samples{};
+    auto write = [&samples](const char* data, size_t count)->void
     {
-        s_buffer.resize(s_written + count);
-        memcpy(s_buffer.data() + s_written, data, count);
-        s_written += count;
+        // Append incoming data to the wavData _samples, use std insert or some other simple method
+        samples.insert(samples.end(), data, data + count);
     };
-
-    s_written = 0;
-    s_buffer.clear();
 
     write("RIFF", 4);
     write((char*)&dataSize, 4);
@@ -154,11 +149,11 @@ bool stopRecordingAudio(RecordingInfo* infoPtr, nvigi::InferenceDataAudio* wavDa
     write((char*)&info.bytesWritten, 4);
     write((char*)info.audioBuffer.data(), info.bytesWritten);
 
-    auto cpuBuffer = castTo<CpuData>(wavData->audio);
-    if (!cpuBuffer) return false;
-    cpuBuffer->buffer = s_buffer.data();
-    cpuBuffer->sizeInBytes = s_buffer.size();
-
+    // Make sure our output slot matches the recored sound format we used here, PCM 16 bit mono, 16kHz
+    std::vector<int16_t> samples16(samples.size() / 2);
+    memcpy(samples16.data(), samples.data(), samples.size());
+    *wavData = samples16;
+    
     delete infoPtr;
     return true;
 }

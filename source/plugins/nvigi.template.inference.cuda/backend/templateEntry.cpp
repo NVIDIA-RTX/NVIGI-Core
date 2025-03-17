@@ -10,12 +10,13 @@
 #include "versions.h"
 #include "../nvigi_template_infer.h"
 #include "source/utils/nvigi.ai/ai.h"
+#include "source/utils/nvigi.hwi/cuda/push_poppable_cuda_context.h"
 #include "_artifacts/gitVersion.h"
 
 namespace nvigi
 {
 
-namespace tmpl_infer
+namespace tmpl_infer_cuda
 {
 
 //! Our common context
@@ -43,14 +44,28 @@ struct TemplateInferContext
     };
 
     // For example, interface we will export
-    ITemplateInfer api{};
+    ITemplateInferCuda api{};
 
     // NOTE: No instance data should be here
 };
 
 struct MyInstanceData
 {
+#ifdef NVIGI_WINDOWS
+    MyInstanceData(const nvigi::NVIGIParameter* params)
+        : cudaContext(params)
+#else
+    MyInstanceData(const nvigi::NVIGIParameter*)
+#endif
+    {}
+
     // All per instance data goes here
+
+    // All plugins that use CUDA must use PushPoppableCudaContext to work 
+    // correctly with CIG (CUDA in Graphics)
+#ifdef NVIGI_WINDOWS
+    PushPoppableCudaContext cudaContext;
+#endif
 };
 
 } // tmpl
@@ -58,60 +73,23 @@ struct MyInstanceData
 //! Define our plugin
 //! 
 //! IMPORTANT: Make sure to place this macro right after the context declaration and always within the 'nvigi' namespace ONLY.
-NVIGI_PLUGIN_DEFINE("nvigi.plugin.template.inference", Version(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH), Version(API_MAJOR, API_MINOR, API_PATCH), tmpl_infer, TemplateInferContext)
-
-nvigi::Result tmplEvaluate(nvigi::InferenceExecutionContext* execCtx)
-{
-    // Validate all inputs first
-
-    if (!execCtx)
-    {
-        NVIGI_LOG_ERROR("Unable to find 'InferenceExecutionContext' structure in the inputs");
-        return kResultInvalidParameter;
-    }
-
-    if (!execCtx->callback)
-    {
-        NVIGI_LOG_ERROR("Template inference callback not provided");
-        return kResultInvalidParameter;
-    }
-
-    if (!execCtx->instance)
-    {
-        NVIGI_LOG_ERROR("Template inference instance not provided");
-        return kResultInvalidParameter;
-    }
-
-    // Now we are good to go!
-
-    return kResultOk;
-}
-
-//! Making sure our implementation is covered with our exception handler
-//! 
-namespace tmpl_infer
-{
-nvigi::Result evaluate(nvigi::InferenceExecutionContext* execCtx)
-{
-    NVIGI_CATCH_EXCEPTION(tmplEvaluate(execCtx));
-}
-} // namespace tmpl
+NVIGI_PLUGIN_DEFINE("nvigi.plugin.template.inference.cuda", Version(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH), Version(API_MAJOR, API_MINOR, API_PATCH), tmpl_infer_cuda, TemplateInferContext)
 
 //! Example interface implementation
 //! 
-nvigi::Result tmplCreateInstance(const nvigi::TemplateInferCreationParameters& params, nvigi::InferenceInstance** _instance)
+nvigi::Result tmplCreateInstance(const nvigi::TemplateInferCudaCreationParameters& params, nvigi::InferenceInstance** _instance)
 {
     //! An example showing how to obtain an optional chained parameters
     //! 
     //! User can chain extra structure(s) using the params._next
     //! 
-    auto extraParams = findStruct<nvigi::TemplateInferCreationParametersEx>(params);
+    auto extraParams = findStruct<nvigi::TemplateInferCudaCreationParametersEx>(params);
     if (extraParams)
     {
         //! User provided extra parameters!
     }
 
-   
+    
     //! Information about our model(s)
     json modelInfo;
     //! Note that we can also look for additional models (if provided by host).
@@ -148,19 +126,16 @@ nvigi::Result tmplCreateInstance(const nvigi::TemplateInferCreationParameters& p
     //! 
     //! Look at gpt/asr or other plugins for a guidance
     
-    auto instanceData = new tmpl_infer::MyInstanceData();
+    auto instanceData = new tmpl_infer_cuda::MyInstanceData(params);
 
     auto instance = new InferenceInstance();
     instance->data = instanceData;
 
     // TODO: implement and assign your API
-    // 
-    // NOTE: Showing evaluate API as a guideline
-     
-    //instance->getFeatureId = tmpl_infer::getFeatureId;
-    //instance->getInputSignature = tmpl_infer::getInputSignature;
-    //instance->getOutputSignature = tmpl_infer::getOutputSignature;
-    instance->evaluate = tmpl_infer::evaluate;
+    //instance->getFeatureId = tmpl_infer_cuda::getFeatureId;
+    //instance->getInputSignature = tmpl_infer_cuda::getInputSignature;
+    //instance->getOutputSignature = tmpl_infer_cuda::getOutputSignature;
+    //instance->evaluate = tmpl_infer_cuda::evaluate;
 
     *_instance = instance;
 
@@ -170,7 +145,7 @@ nvigi::Result tmplCreateInstance(const nvigi::TemplateInferCreationParameters& p
 nvigi::Result tmplDestroyInstance(const nvigi::InferenceInstance* instance)
 {
     if (!instance) return kResultInvalidParameter;
-    auto data = static_cast<tmpl_infer::MyInstanceData*>(instance->data);
+    auto data = static_cast<tmpl_infer_cuda::MyInstanceData*>(instance->data);
     
     // Do any other cleanup here
 
@@ -180,16 +155,16 @@ nvigi::Result tmplDestroyInstance(const nvigi::InferenceInstance* instance)
     return kResultOk;
 }
 
-nvigi::Result tmplGetCapsAndRequirements(nvigi::TemplateInferCapabilitiesAndRequirements* /*modelInfo*/, const nvigi::TemplateInferCreationParameters* /*params*/)
+nvigi::Result tmplGetCapsAndRequirements(nvigi::TemplateInferCudaCapabilitiesAndRequirements* /*modelInfo*/, const nvigi::TemplateInferCudaCreationParameters* /*params*/)
 {
     return kResultOk;
 }
 
 //! Making sure our implementation is covered with our exception handler
 //! 
-namespace tmpl_infer
+namespace tmpl_infer_cuda
 {
-nvigi::Result createInstance(const nvigi::TemplateInferCreationParameters& params, nvigi::InferenceInstance** instance)
+nvigi::Result createInstance(const nvigi::TemplateInferCudaCreationParameters& params, nvigi::InferenceInstance** instance)
 {
     NVIGI_CATCH_EXCEPTION(tmplCreateInstance(params, instance));
 }
@@ -199,7 +174,7 @@ nvigi::Result destroyInstance(const nvigi::InferenceInstance* instance)
     NVIGI_CATCH_EXCEPTION(tmplDestroyInstance(instance));
 }
 
-nvigi::Result getCapsAndRequirements(nvigi::TemplateInferCapabilitiesAndRequirements* modelInfo, const nvigi::TemplateInferCreationParameters* params)
+nvigi::Result getCapsAndRequirements(nvigi::TemplateInferCudaCapabilitiesAndRequirements* modelInfo, const nvigi::TemplateInferCudaCreationParameters* params)
 {
     NVIGI_CATCH_EXCEPTION(tmplGetCapsAndRequirements(modelInfo, params));
 }
@@ -222,11 +197,11 @@ Result nvigiPluginGetInfo(nvigi::framework::IFramework* framework, nvigi::plugin
     auto& info = plugin::getContext()->info;
     *_info = &info;
 
-    info.id = plugin::tmpl_infer::kIdBackendApi;
+    info.id = plugin::tmpl_infer_cuda::kId;
     info.description = "template plugin implementation";
     info.author = "NVIDIA";
     info.build = GIT_BRANCH_AND_LAST_COMMIT;
-    info.interfaces = { plugin::getInterfaceInfo<ITemplateInfer>() };
+    info.interfaces = { plugin::getInterfaceInfo<ITemplateInferCuda>() };
 
     //! Specify minimum spec for the OS, driver and GPU architecture
     //! 
@@ -244,16 +219,16 @@ Result nvigiPluginRegister(framework::IFramework* framework)
 {
     if (!plugin::internalPluginSetup(framework)) return kResultInvalidState;
 
-    auto& ctx = (*tmpl_infer::getContext());
+    auto& ctx = (*tmpl_infer_cuda::getContext());
 
     //! Add your interface(s) to the framework
     //!
     //! Note that we are exporting functions with the exception handler enabled
-    ctx.api.createInstance = tmpl_infer::createInstance;
-    ctx.api.destroyInstance = tmpl_infer::destroyInstance;
-    ctx.api.getCapsAndRequirements = tmpl_infer::getCapsAndRequirements;
+    ctx.api.createInstance = tmpl_infer_cuda::createInstance;
+    ctx.api.destroyInstance = tmpl_infer_cuda::destroyInstance;
+    ctx.api.getCapsAndRequirements = tmpl_infer_cuda::getCapsAndRequirements;
 
-    framework->addInterface(plugin::tmpl_infer::kIdBackendApi, &ctx.api, 0);
+    framework->addInterface(plugin::tmpl_infer_cuda::kId, &ctx.api, 0);
 
     //! Obtain interfaces from other plugins or core (if needed)
     //! 
@@ -296,7 +271,7 @@ Result nvigiPluginRegister(framework::IFramework* framework)
 //! 
 Result nvigiPluginDeregister()
 {
-    // auto& ctx = (*tmpl_infer::getContext());
+    // auto& ctx = (*tmpl_infer_cuda::getContext());
 
     //! Do any other shutdown tasks here
     //!

@@ -102,13 +102,18 @@ NVIGI_VALIDATE_STRUCT(InferenceDataDescriptorArray)
 struct alignas(8) InferenceDataSlot {
     InferenceDataSlot() {};
     NVIGI_UID(UID({ 0xa3560575, 0xf9f7, 0x4fbf,{ 0xa3, 0x82, 0x22, 0xd6, 0x44, 0x8c, 0x9d, 0x52 } }), kStructVersion1)
-    InferenceDataSlot(const char* _key, void* _data) : key(_key), data(_data) {};
+
+#ifndef __GNUC__
+    NVIGI_DEPRECATED(InferenceDataSlot(const char* _key, void* _data) { key = _key; data = (BaseStructure*)_data; }, "Please use the explicit InferenceDataSlot constructor!")
+#endif
+    InferenceDataSlot(const char* _key, NVIGIParameter* _data) : key(_key),data(_data) {}
+
     //! The key identifying the data slot
     const char* key{};
     //! The InferenceData* structure containing the actual data.
     //! 
     //! Note that this can be constant or not, depending if data slot is input or output
-    void* data{};
+    NVIGIParameter* data{};
 
     //! v2+ members go here, remember to update the kStructVersionN in the above NVIGI_UID macro!
 };

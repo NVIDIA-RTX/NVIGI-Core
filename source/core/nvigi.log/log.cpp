@@ -17,51 +17,62 @@ namespace log
 
 #ifdef NVIGI_WINDOWS
 
-HMONITOR g_otherMonitor = {};
 
-BOOL MyInfoEnumProc(
-    HMONITOR monitor,
-    HDC unnamedParam2,
-    LPRECT unnamedParam3,
-    LPARAM unnamedParam4
-)
-{
-    if (monitor != MonitorFromWindow(GetConsoleWindow(), MONITOR_DEFAULTTONEAREST))
-    {
-        g_otherMonitor = monitor;
-    }
-    return TRUE;
+// Structure to store monitor information
+struct MonitorInfo {
+    HMONITOR hMonitor;
+    RECT rcMonitor;
+};
+
+// Callback function for EnumDisplayMonitors to store monitor handles
+BOOL CALLBACK monitorEnumProc(HMONITOR hMonitor, HDC hdc, LPRECT lprcMonitor, LPARAM lParam) {
+    std::vector<MonitorInfo>* monitors = reinterpret_cast<std::vector<MonitorInfo>*>(lParam);
+    monitors->push_back({ hMonitor, *lprcMonitor });
+    return TRUE; // Continue enumeration
 }
 
-void moveWindowToAnotherMonitor(HWND hwnd, UINT flags)
-{
-    RECT prc;
-    GetWindowRect(hwnd, &prc);
-    
-    MONITORINFO mi;
-    RECT        rc;
-    int         w = 2 * (prc.right - prc.left);
-    int         h = 2 * (prc.bottom - prc.top);
+void moveWindowToOtherMonitor(HWND hwnd) {
+    // Collect available monitors
+    std::vector<MonitorInfo> monitors;
+    EnumDisplayMonitors(NULL, NULL, monitorEnumProc, reinterpret_cast<LPARAM>(&monitors));
 
-    EnumDisplayMonitors(NULL, NULL, MyInfoEnumProc, 0);
-
-    if (g_otherMonitor)
-    {
-        mi.cbSize = sizeof(mi);
-        GetMonitorInfo(g_otherMonitor, &mi);
-
-        //if (flags & MONITOR_WORKAREA)
-        rc = mi.rcWork;
-        //else
-        //    rc = mi.rcMonitor;
-
-        prc.left = rc.left + (rc.right - rc.left - w) / 2;
-        prc.top = rc.top + (rc.bottom - rc.top - h) / 2;
-        prc.right = prc.left + w;
-        prc.bottom = prc.top + h;
-
-        SetWindowPos(hwnd, NULL, prc.left, prc.top, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+    // Ensure there are exactly two monitors
+    if (monitors.size() < 2) {
+        return;
     }
+
+    // Get current window's position
+    RECT windowRect;
+    GetWindowRect(hwnd, &windowRect);
+
+    // Determine which monitor the window is on
+    HMONITOR currentMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+
+    // Find the other monitor
+    HMONITOR targetMonitor = nullptr;
+    RECT targetRect;
+    for (const auto& monitor : monitors) {
+        if (monitor.hMonitor != currentMonitor) {
+            targetMonitor = monitor.hMonitor;
+            targetRect = monitor.rcMonitor;
+            break;
+        }
+    }
+
+    if (!targetMonitor) {
+        return;
+    }
+
+    // Calculate new size (1/4th of the second monitor)
+    int newWidth = (targetRect.right - targetRect.left) / 2;  // Half of monitor width
+    int newHeight = (targetRect.bottom - targetRect.top) / 2; // Half of monitor height
+
+    // Calculate new position to center the window on the target monitor
+    int newX = targetRect.left + (targetRect.right - targetRect.left - newWidth) / 2;
+    int newY = targetRect.top + (targetRect.bottom - targetRect.top - newHeight) / 2;
+
+    // Move and resize the window
+    SetWindowPos(hwnd, NULL, newX, newY, newWidth, newHeight, SWP_NOZORDER | SWP_SHOWWINDOW);
 }
 
 #else
@@ -159,7 +170,7 @@ struct Log
         {
             AllocConsole();
             SetConsoleTitleA("NVIGI");
-            moveWindowToAnotherMonitor(GetConsoleWindow(), 0);
+            moveWindowToOtherMonitor(GetConsoleWindow());
             m_outHandle = GetStdHandle(STD_OUTPUT_HANDLE);
         }
 #endif
@@ -187,6 +198,13 @@ struct Log
 void enableConsole(bool flag)
 {
     auto& ctx = *Log::s_log;
+#ifdef NVIGI_WINDOWS
+    if (ctx.m_console && !flag)
+    {
+        FreeConsole();
+        ctx.m_outHandle = {};
+    }
+#endif
     ctx.m_console = flag;
 }
 
@@ -281,7 +299,11 @@ void shutdown()
     ctx.m_consoleActive = false;
 #ifdef NVIGI_WINDOWS
     // Win32 API does not require us to close this handle
-    ctx.m_outHandle = {};
+    if (ctx.m_outHandle)
+    {
+        FreeConsole();
+        ctx.m_outHandle = {};
+    }
 #endif
 }
 

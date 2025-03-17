@@ -1,10 +1,10 @@
 if os.istarget("windows") then
 
 group "plugins/hwi"
-	project "nvigi.plugin.hwi.cuda"
+	project "nvigi.plugin.hwi.common"
 		kind "SharedLib"
 		
-		pluginBasicSetup("hwi/cuda")
+		pluginBasicSetup("hwi/common")
 	
 		files {
 			"./*.h",
@@ -29,9 +29,7 @@ group "plugins/hwi"
 	filter {}
 
 	postbuildcommands {
-	  '{COPYFILE} ../../external/cuda/bin/cudart64_12.dll %[%{cfg.buildtarget.directory}]',
-	  '{COPYFILE} ../../external/cuda/extras/CUPTI/lib64/cupti64_2025.1.0.dll %[%{cfg.buildtarget.directory}]',
-	  '{COPYFILE} ../../external/cig_scheduler_settings/bin/Release_x64/cig_scheduler_settings.dll %[%{cfg.buildtarget.directory}]'
+	  '{COPYFILE} ../../external/cuda/bin/cudart64_12.dll %[%{cfg.buildtarget.directory}]'
 	}
 group ""
 
