@@ -19,6 +19,8 @@ This guide primarily focuses on the general use of the In-Game Inferencing, incl
   - [Interfaces](#interfaces)
 - [Validation](#validation)  
 - [3rd Party Dependencies](#3rd-party-dependencies)
+- [Troubleshooting](#troubleshooting)
+  - [Crash Dumps and Exceptions](#crash-dumps-and-exceptions)
 
 ## INTRODUCTION
 
@@ -527,3 +529,45 @@ $some_path/my_app_dependencies
 └──libz.dll // !!! HOST version
 ```
 > NOTE: If similar issue occurs while deploying your application please contact NVIDIA
+
+## Troubleshooting
+
+
+### Crash Dumps and Exceptions
+
+If unhandled exception is thrown in a NVIGI module, the crash dump and log file will be saved under `ProgramData\NVIDIA\NVIGI\$EXE_NAME\$ID` by default. 
+
+Here is an example of the exception file structure:
+
+```bash
+C:\ProgramData\NVIDIA\NVIGI\nvigi.test\1738350995226850
+│
+├──nvigi-log.txt
+└──nvigi-sha-e46f10d.dmp
+```
+
+The crash callstack is shown at the end of the log file, providing a detailed trace of the function calls leading to the exception. Developers can use this information to identify the source of the issue. 
+
+For example:
+
+```txt
+[2025-01-31 11:16:35.227][nvigi][error][exception.cpp:322][writeMiniDump]Exception detected - thread 72668 - creating mini-dump 'C:\ProgramData/NVIDIA/NVIGI/nvigi.test/1738350995226850/nvigi-sha-e46f10d.dmp'
+[2025-01-31 11:16:41.917][nvigi][info][exception.cpp:377][writeMiniDump]Stack trace:
+ntdll:RtlGetCurrentServiceSessionId:7fff4f92c37d
+ntdll:RtlFreeHeap:7fff4f92b001
+ucrtbase:free_base:7fff4d42364b
+nvigi.core.framework:nvigiShutdown:7fff14560bb9
+nvigi.test:C_A_T_C_H_T_E_S_T_134:7ff75782132a
+nvigi.test:Catch::RunContext::invokeActiveTestCase:7ff757845619
+nvigi.test:Catch::RunContext::runCurrentTest:7ff757856a4f
+nvigi.test:Catch::RunContext::runTest:7ff757869cc1
+nvigi.test:Catch::`anonymous namespace'::TestGroup::execute:7ff75783fb0b
+nvigi.test:Catch::Session::runInternal:7ff757863b54
+nvigi.test:Catch::Session::run:7ff757854e57
+nvigi.test:wmain:7ff75788b415
+nvigi.test:__scrt_common_main_seh:7ff75789c6dc
+KERNEL32:BaseThreadInitThunk:7fff4dcc259d
+ntdll:RtlUserThreadStart:7fff4f94af38
+```
+
+> NOTE: Symbols can be found in the `nvigi_pack` which can be downloaded from `https://developer.nvidia.com/rtx/in-game-inferencing`

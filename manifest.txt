@@ -64,7 +64,10 @@
 	nvigi-core-source\source\core\nvigi.types/types.h
 	nvigi-core-source\source\plugins\nvigi.hwi\common/commonEntry.cpp
 	nvigi-core-source\source\plugins\nvigi.hwi\common/nvigi_hwi_common.h
+	nvigi-core-source\source\plugins\nvigi.hwi\common/plugin.rc
 	nvigi-core-source\source\plugins\nvigi.hwi\common/premake.lua
+	nvigi-core-source\source\plugins\nvigi.hwi\common/resource.h
+	nvigi-core-source\source\plugins\nvigi.hwi\common/versions.h
 	nvigi-core-source\source\plugins\nvigi.hwi\cuda/cudaEntry.cpp
 	nvigi-core-source\source\plugins\nvigi.hwi\cuda/cuda_scg.cpp
 	nvigi-core-source\source\plugins\nvigi.hwi\cuda/cuda_scg.h
