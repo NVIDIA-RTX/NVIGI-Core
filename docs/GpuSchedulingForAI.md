@@ -8,6 +8,7 @@ Optimized GPU scheduling is currently utilized by the following CUDA plugins.
   * Automatic Speech Recognition (`nvigi::plugin::asr::ggml::cuda`)
   * Embed (`nvigi::plugin::embed::ggml::cuda`)
   * Generative Pre-Trained Transformer (`nvigi::plugin::gpt::ggml::cuda`)
+  * Riva Magpie Flow / ASqFlow Text to Speech (`nvigi::plugin::tts::asqflow_trt`, `nvigi::plugin::tts::asqflow_ggml`)
 * ACE SDK plugins - not available in all packs
   * Audio To Emotion (`nvigi::plugin::a2e::trt::cuda`)
   * Audio To Face (`nvigi::plugin::a2f::trt::cuda`)
@@ -19,7 +20,7 @@ NVIGI's GPU scheduling uses CUDA in Graphics (CIG) which has the following requi
 * Hardware scheduling must be enabled in Windows 10 and 11. Windows 11 has hardware scheduling enabled by default.
 
 ## A note on performance measurement
-It is important not to use GPU begin/end event queries (such as D3D12_QUERY_TYPE_TIMESTAMP or CUDA events) to measure the cost of AI features. The reason is that such measurements do not take into account how much graphics work is running in parallel with the AI compute during the measured interval. For example, if AI is using 10% of the execution units of the GPU for 1ms, and graphics is running in parallel using the other 90%, then queries would report the AI cost as 1ms, which is not correct. Instead its better to add a way to toggle the AI feature (for example a command line parameter), run a benchmark twice with the feature enabled and disabled, and report the difference in total frame time.
+It is important not to use GPU begin/end event queries (such as D3D12_QUERY_TYPE_TIMESTAMP or CUDA events) to measure the cost of AI features. The reason is that such measurements do not take into account how much graphics work is running in parallel with the AI compute during the measured interval. For example, if AI is using 10% of the execution units of the GPU for 1ms, and graphics is running in parallel using the other 90%, then queries would report the AI cost as 1ms, which is not correct. Instead it's better to add a way to toggle the AI feature (for example a command line parameter), run a benchmark twice with the feature enabled and disabled, and report the difference in total frame time.
 
 ## How to use
 
@@ -45,7 +46,7 @@ In order to schedule graphics and compute efficiently, NVIGI needs to know the D
 This ensures that compute work submitted by NVIGI will run efficiently with graphics running in parallel. 
 
 ## How to set the relative priority of compute and graphics
-In the past GPU compute workloads in games were often directly coupled to graphics frame generation, for example raytracing and animation. In contrast, NVIGI pipelines, consisting of automatic speech recognition (ASR), language models (LM) etc. can run asynchronously to frame generation. Their latency requirements are dictated not by human visual perception (measured in milliseconds), but how fast humans listen, think and speak (measured in hundreds of milliseconds). Each invocation of the pipeline (for example to process a question) can run across many graphics frames. For this reason the workload can be thought of as floating relative to the game’s graphics and compute workload.
+In the past GPU compute workloads in games were often directly coupled to graphics frame generation, for example raytracing and animation. In contrast, NVIGI pipelines, consisting of automatic speech recognition (ASR), language models (LM), text to speech (TTS) etc. can run asynchronously to frame generation. Their latency requirements are dictated not by human visual perception (measured in milliseconds), but how fast humans listen, think and speak (measured in hundreds of milliseconds). Each invocation of the pipeline (for example to process a question) can run across many graphics frames. For this reason the workload can be thought of as floating relative to the game’s graphics and compute workload.
 
 For past compute workloads coupled to graphics generation, the compute work was often on the critical path of the graphics frame, and so the hardware executed compute with high priority to try to maximize graphics frame rate.
 
@@ -62,6 +63,7 @@ The default scheduling mode in NVIGI is kBalance. The default in normal CUDA usa
 These settings are currently supported by the following CUDA plugins:
   * Automatic Speech Recognition (`nvigi::plugin::asr::ggml::cuda`)
   * Generative Pre-Trained Transformer (`nvigi::plugin::gpt::ggml::cuda`)
+  * ASqFlow Text to Speech (`nvigi::plugin::tts::ASqFlow::trt`)
 
 ### API
 You can set the priority at any time using SetGpuInferenceSchedulingMode(). The evaluate() call of supported plugins applies the priority to all CUDA kernels it launches, and those kernels may execute after evaluate() returns. The following example shows a game that has two phases, the first is before gameplay starts, and prioritizes NPC responsiveness, the second prioritizes FPS during gameplay.
@@ -80,7 +82,7 @@ You can set the priority at any time using SetGpuInferenceSchedulingMode(). The 
 Care should be taken when integrating NVIGI into an existing application that is also using a D3D object wrapper like Streamline.  The queue/device parameters passed to NVIGI must be the **native** objects, not the app-level wrappers.  In the case of Streamline, this means using `slGetNativeInterface` to retrieve the base interface object before passing it to NVIGI.
 
 ### Limitations
-Note that CUDA Compute In Graphics contexts are not compatible with compute-only CUDA contexts. In particular, accessing CUDA pointers outside of the CUDA context that created them may cause CUDA API errors, which if not handled can causes crashes. So using multiple CUDA contexts in a game is not recommended. CUDA virtual memory and cudaMallocAsync are also not supported.
+Note that CUDA Compute In Graphics contexts are not compatible with compute-only CUDA contexts. In particular, accessing CUDA pointers outside of the CUDA context that created them may cause CUDA API errors, which if not handled can cause crashes. So using multiple CUDA contexts in a game is not recommended. CUDA virtual memory and cudaMallocAsync are also not supported.
 
 ## UnrealEngine 5 example code
 

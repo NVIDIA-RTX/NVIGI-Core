@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -54,6 +54,7 @@ namespace nvigi
         std::mutex threadsThatHavePushedMutex;
         CUcontext cudaCtx{};
         nvigi::IHWICuda* icig{};
+        bool usingCiG = false;
 
         PushPoppableCudaContext(const nvigi::NVIGIParameter* params)
         {
@@ -136,6 +137,38 @@ namespace nvigi
                 cudaCtxNeedsRelease = true;
             }
             constructorSucceeded = true;
+
+#ifdef NVIGI_WINDOWS
+            // !cudaCtxNeedsRelease because we don't need to check the default context
+            // and don't want to push/pop it
+            if (useCudaCtx && !cudaCtxNeedsRelease)
+            {
+                CUresult cuerr = cuCtxPushCurrent(cudaCtx);
+                if (cuerr != CUDA_SUCCESS)
+                {
+                    NVIGI_LOG_ERROR("cuCtxPushCurrent failed, return code %d", cuerr);
+                }
+                else
+                {
+                    size_t value{};
+                    cuerr = cuCtxGetLimit(&value, CU_LIMIT_CIG_ENABLED);
+                    if (cuerr != CUDA_SUCCESS)
+                    {
+                        NVIGI_LOG_ERROR("cuCtxGetLimit failed, return code %d", cuerr);
+                    }
+                    else
+                    {
+                        usingCiG = value != 0;
+                    }
+                    CUcontext oldCtx{};
+                    cuerr = cuCtxPopCurrent(&oldCtx);
+                    if (cuerr != CUDA_SUCCESS)
+                    {
+                        NVIGI_LOG_ERROR("cuCtxPopCurrent failed, return code %d", cuerr);
+                    }
+                }
+            }
+#endif
         }
 
         ~PushPoppableCudaContext()
@@ -173,6 +206,8 @@ namespace nvigi
                 }
             }
         }
+
+        bool isUsingCiG() { return usingCiG; }
 
         void pushRuntimeContext()
         {

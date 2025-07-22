@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -109,7 +109,7 @@ namespace nvigi
 					err = (*ptr_cuCtxCreate_v4)(&cuContext, &ctxCreateParams, 0, dev);
 					if (err != CUDA_SUCCESS)
 					{
-						NVIGI_LOG_WARN("CiG could not create context!");
+						NVIGI_LOG_WARN("CiG could not create context! cuCtxCreate_v4 returned %d", err);
 						return nvigi::kResultDriverOutOfDate;
 					}
 

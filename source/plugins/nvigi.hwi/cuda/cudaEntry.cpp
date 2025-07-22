@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -67,21 +67,60 @@ static nvigi::Result cudaGetSharedContextForQueue(const nvigi::D3D12Parameters& 
     if (cuCtx == nullptr || params.device == nullptr || params.queue == nullptr)
         return nvigi::kResultInvalidParameter;
 
-    if (!ctx.contextMap.contains(params.queue))
+    //! IMPORTANT: With CiG sometimes we can fail to create context with a direct (graphics) queue hence we need to try with the async compute one
+    //!
+    //! Logic:
+    //! 
+    //! * Try direct queue first, if all good ignore async
+    //! * If direct fails then async compute queue becomes a mandatory parameter
+    //! * If both queues fail then we have a problem but ideally that should never happen
+    //! 
+    auto creaateSharedContext = [&ctx](const D3D12Parameters& params, ID3D12CommandQueue** actualQueueUsed) -> nvigi::Result
+        {
+            CUcontext cuCtx{};
+            *actualQueueUsed = params.queue;
+            // Try direct queue first, we checked before that it is valid and provided
+            if (!ctx.contextMap.contains(params.queue))
+            {
+                // Not cached, create one
+                if (NVIGI_FAILED(res, nvigi::cudaScg::CreateSharedCUDAContext(params.device, params.queue, cuCtx)))
+                {
+                    // Failed with direct queue, let's try async compute, it becomes a mandatory parameter now
+                    if (!params.queueCompute)
+                    {
+                        NVIGI_LOG_ERROR("Failed to create CUDA shared context with the provided direct (graphics) queue, please provide your asynchronous compute queue in D3D12Parameters");
+                        return nvigi::kResultInvalidParameter;
+                    }
+                    *actualQueueUsed = params.queueCompute;
+                    if (!ctx.contextMap.contains(params.queueCompute))
+                    {
+                        // Not cached, create one
+                        if (NVIGI_FAILED(res, nvigi::cudaScg::CreateSharedCUDAContext(params.device, params.queueCompute, cuCtx)))
+                        {
+                            return res;
+                        }
+                    }
+                }
+            }
+            // Check if this is the first time we create a context and cache it
+            if (!ctx.contextMap.contains(*actualQueueUsed))
+            {
+                hwiCuda::CudaContext::CudaContextInfo info;
+                info.ctx = cuCtx;
+                info.refcount = 0;
+                ctx.contextMap[*actualQueueUsed] = info;
+            }
+            return kResultOk;
+        };
+
+    ID3D12CommandQueue* actualQueueUsed = nullptr;
+    if (NVIGI_FAILED(res, creaateSharedContext(params, &actualQueueUsed)))
     {
-        CUcontext cuContext = nullptr;
-        nvigi::Result res = nvigi::cudaScg::CreateSharedCUDAContext(params.device, params.queue, cuContext);
-        if (res != nvigi::kResultOk)
-            return res;
-
-        hwiCuda::CudaContext::CudaContextInfo info;
-        info.ctx = cuContext;
-        info.refcount = 0;
-
-        ctx.contextMap[params.queue] = info;
+        NVIGI_LOG_ERROR("Failed to create shared CUDA context");
+        return res;
     }
 
-    hwiCuda::CudaContext::CudaContextInfo& ctxInfo = ctx.contextMap[params.queue];
+    hwiCuda::CudaContext::CudaContextInfo& ctxInfo = ctx.contextMap[actualQueueUsed];
     ctxInfo.refcount++;
     *cuCtx = ctxInfo.ctx;
 
@@ -134,7 +173,11 @@ static nvigi::Result cudaApplyGlobalGpuInferenceSchedulingMode(CUstream* cudaStr
         okSoFar = ctx.sched.StreamSetWorkloadType(cudaStreams[i], CigWorkloadType(schedulingMode));
     }
 
-    return okSoFar;
+    // Translate CUresult to nvigi::Result
+    nvigi::Result retval = kResultOk;
+    if (okSoFar != CUDA_SUCCESS) retval = kResultDriverOutOfDate;
+
+    return retval;
 }
 
 //! Making sure our implementation is covered with our exception handler

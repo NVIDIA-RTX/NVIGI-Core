@@ -1,6 +1,6 @@
 # Architecture
 
-NVIGI stands for NVIDIA In-Game Inferencing. It is a plugin manager that provides a simple way to obtain **typed and versioned** C style interfaces which can implement range of arbitrary algorithms and features.
+NVIGI stands for NVIDIA In-Game Inferencing. It is a plugin manager that provides a simple way to obtain **typed and versioned** C style interfaces which can implement a range of arbitrary algorithms and features.
 
 Here are some key points about NVIGI:
 
@@ -152,7 +152,7 @@ NVIGI_PLUGIN_DEFINE("nvigi.plugin.template", Version(VERSION_MAJOR, VERSION_MINO
 > **NOTE:**
 > All plugin names must be in `nvigi.plugin.$name.$backend{.$api}` format and generated modules must follow the same naming convention. See existing plugins for examples.
 
-Next we specify core function which provides information about our plugin:
+Next we specify core function, which provides information about our plugin:
 
 ```cpp
 //! Main entry point - get information about our plugin
@@ -357,7 +357,7 @@ NVIGI_API nvigi::Result nvigiUnloadInterface(nvigi::UID feature, void* _interfac
 ```
 
 > NOTE:
-> If the unloaded interface was the last interface implemented by a plugin, the plugin in question will be unloaded and shutdown sequence for it will be triggered.
+> If the unloaded interface was the last interface implemented by a plugin, the plugin in question will be unloaded and the shutdown sequence for it will be triggered.
 
 ### Shutdown
 

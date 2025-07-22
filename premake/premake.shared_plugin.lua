@@ -38,6 +38,7 @@ function pluginBasicSetupInternal(name, sdk)
 		vpaths { ["log"] = {CORESDK .. "source/core/nvigi.log/**.h",CORESDK .. "source/core/nvigi.log/**.cpp"}}
 		vpaths { ["utils/ai"] = {CORESDK .. "source/utils/nvigi.ai/*.h"}}
 		vpaths { ["utils/dsound"] = {CORESDK .. "source/utils/nvigi.dsound/*.h"}}
+		vpaths { ["utils/d3d12"] = {CORESDK .. "source/utils/nvigi.d3d12/*.h"}}
 		vpaths { ["file"] = {CORESDK .. "source/core/nvigi.file/**.h", CORESDK .. "source/core/nvigi.file/**.cpp"}}
 		vpaths { ["extra"] = {CORESDK .. "source/core/nvigi.extra/**.h"}}
 		vpaths { ["plugin"] = {CORESDK .. "source/core/nvigi.plugin/**.h",CORESDK .. "source/core/nvigi.plugin/**.cpp"}}

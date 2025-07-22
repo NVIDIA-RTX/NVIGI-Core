@@ -5,8 +5,6 @@ This guide primarily focuses on the general use of the In-Game Inferencing, incl
 
 > **IMPORTANT**: This guide might contain pseudo code, for the up to date implementation and source code which can be copy pasted please see the [basic sample](../source/samples/nvigi.basic/basic.cpp)
 
-## Version 1.1.0 Release
-
 ## Table of Contents
 - [Introduction](#introduction)
 - [Key Concepts](#key-concepts)
@@ -18,9 +16,13 @@ This guide primarily focuses on the general use of the In-Game Inferencing, incl
   - [Shutdown](#shutdown)
   - [Interfaces](#interfaces)
 - [Validation](#validation)  
+- [D3D Considerations](#d3d-considerations)
+  - [Streamline](#streamline)
+  - [Agility SDK](#microsoft-agility-sdk)
 - [3rd Party Dependencies](#3rd-party-dependencies)
 - [Troubleshooting](#troubleshooting)
   - [Crash Dumps and Exceptions](#crash-dumps-and-exceptions)
+
 
 ## INTRODUCTION
 
@@ -35,7 +37,8 @@ NVIGI functions as a plugin manager that provides `secure plugin loading` and an
 * Each plugin implements at least one C-style interface which is provided to the host application and other plugins to use
 * Interfaces are completely custom and it is up to the plugins to decide what functionality is needed in them
 * Different plugins can implement identical interfaces if needed, normally they would use different `backends` to provide same functionality
-* Plugins are developed independently and can be updated independently (as needed) in any application (even after it has shipped)
+* Plugins are **developed independently and can be updated independently** (as needed) in any application (even after it has shipped)
+  * Each plugin defines the minimum specification required for it to run (minimum driver, OS versions etc.)
 * Plugins have unique identifiers in the following namespace format `nvigi::plugin::$name{::$backend::$api}::kId` where backend and API are optional
 * The core component `nvigi.core.framework` enumerates all available plugins, determines which plugins can run on user's system and what interfaces do they export 
   * Not all plugin locations need to be known when `nvigi.core.framework` is initialized
@@ -69,9 +72,12 @@ Note that we are chaining common properties to our main properties like this:
 ```cpp
     if(NVIGI_FAILED(params.chain(common)))
     {
-        // Handle error
+        // Make sure NOT to share structures across different chains unless you ensure they are added at the end of each chain
     }
 ```
+
+> **IMPORTANT**: Chaining can fail when sharing the same structure across multiple chains which is NOT allowed unless the shared structure is the leaf (at the end in all chains)
+
 Now we provide additional information about D3D12 context, assuming the host application is using D3D graphics API:
 ```cpp
 //! D3D12 specific 
@@ -86,7 +92,7 @@ Then we chain it together like this:
         // Handle error
     }
 ```
-Finaly, we end up with the following chained input structure which can be provided to NVIGI inteface(s) for processing:
+Finally, we end up with the following chained input structure which can be provided to NVIGI interface(s) for processing:
 ```cpp
 nvigi::GPTCreationParameters -> nvigi::D3D12Parameters -> nvigi::CommonCreationParameters
 ```
@@ -141,7 +147,7 @@ By default, any API in NVIGI is NOT thread safe **unless stated otherwise in the
 //! This method is NOT thread safe.
 nvigi::Result(*createInstance)(const nvigi::NVIGIParameter* params, nvigi::InferenceInstance** instance);
 ```
-Note that the line immediately above the declaration explicitly states that this method is NOT thread safe. It is host's responsibility to provide synchronization is such scenarios.
+Note that the line immediately above the declaration explicitly states that this method is NOT thread safe. It is the host's responsibility to provide synchronization in such scenarios.
 
 ## Security
 
@@ -173,15 +179,21 @@ if(nvigi::security::verifyEmbeddedSignature(pathToNVIGICore.wstring().c_str()))
 }
 ```
 
-> IMPORTANT: Failure to check for digital signature on `nvigi.core.framework.dll` can result in executing potentially dangerous code with wide range of consequences.
+> IMPORTANT: Failure to check for digital signature on `nvigi.core.framework.dll` can result in executing potentially dangerous code with a wide range of consequences.
 
-As mentioned above, `nvigi.core.framework.dll` with NOT check any signatures on 3rd party dependencies. This is a security vulnerability and must be addressed by the host application either by enforcing CRC checks on all DLLs or some other method which ensures that libraries haven't been tampered with before loading them.
+As mentioned above, `nvigi.core.framework.dll` will NOT check any signatures on 3rd party dependencies. This is a security vulnerability and must be addressed by the host application either by enforcing CRC checks on all DLLs or some other method which ensures that libraries haven't been tampered with before loading them. 
+
+### 3rd Party Shared Libraries
+
+When running on non NVIDIA hardware shared libraries like `amd_ags_x64.dll` can be loaded by `nvigi.core.framework.dll` to check hardware capabilities, driver version etc. If these 3rd party libraries are NOT digitally signed NVIGI will NOT use secure loading procedures so failure to ensure their integrity, by the host app, can result in executing potentially dangerous code with a wide range of consequences.
 
 ### Elevated Privileges
 
+> NOTE: This is related only to Windows platform, Linux users can skip this section
+
 If the host process is running with elevated privileges **NVIGI core will attempt to downgrade some of them to mitigate security risks**. If this behavior is not desirable it can be overridden by setting `PreferenceFlags::eDisablePrivilegeDowngrade` flag. 
 
-> IMPORTANT: Please note that **when opting out from the privilege downgrade the host application is taking over the responsibility for any security breaches that might occur** and in this scenario, it is highly recommended to install the NVIGI bits in secure location which can be modified only by admin users.
+> IMPORTANT: Please note that **when opting out from the privilege downgrade, the host application is taking over the responsibility for any security breaches that might occur** in this scenario, it is highly recommended to install the NVIGI bits in secure location which can be modified only by admin users.
 
 Here is the list of privileges in question:
 
@@ -197,8 +209,6 @@ SE_TAKE_OWNERSHIP_NAME
 SE_IMPERSONATE_NAME
 ```
 
-> NOTE: This is related only to Windows platform
-
 ## Core API
 
 The core API is rather minimalistic and located in the `nvigi.h` header.
@@ -212,12 +222,14 @@ The core API is rather minimalistic and located in the `nvigi.h` header.
 //!
 //! Call this method when your application is initializing
 //!
+//! NOTE: On Windows, host is NOT supposed to change DLL search paths in any way while this method is running without proper synchronization.
+//!
 //! @param pref Specifies preferred behavior for the NVIGI framework (NVIGI will keep a copy)
 //! @param pluginInfo Optional pointer to data structure containing information about plugins, user system
 //! @param sdkVersion Current SDK version
 //! @returns nvigi::kResultOk if successful, error code otherwise (see nvigi_result.h for details)
 //!
-//! This method is NOT thread safe.
+//! This method is NOT thread safe and will temporarily change DLL search path on Windows.
 NVIGI_API nvigi::Result nvigiInit(const nvigi::Preferences &pref, nvigi::PluginAndSystemInformation** pluginInfo = nullptr, uint64_t sdkVersion = nvigi::kSDKVersion);
 ```
 
@@ -234,7 +246,9 @@ pref.utf8PathsToPlugins = myPathsToNVIGIPlugins;
 pref.utf8PathToDependencies = myPathToNVIGISharedPluginDependencies;
 pref.logMessageCallback = myCallback; // OPTIONAL
 pref.utf8PathToLogsAndData = myPathToLogs; // OPTIONAL but highly recommended, much easier to track down any issues
-
+```
+> NOTE: In non-production builds preferences can be overridden via `nvigi.core.framework.json` file if placed next to the `nvigi.core.framework.dll`. This allows user to change logging level, path to plugins, log file etc. without having to change the code.
+```cpp
 // Optional info about system and plugins
 nvigi::PluginAndSystemInformation* info{};
 if(NVIGI_FAILED(result, nvigiInit(pref, &info, nvigi::kSDKVersion)))
@@ -285,7 +299,7 @@ As mentioned in the introduction, each plugin is assigned a unique identifier an
 NVIGI_API nvigi::Result nvigiLoadInterface(nvigi::PluginID feature, const nvigi::UID& interfaceType, uint32_t interfaceVersion, void** _interface, const char* utf8PathToPlugin);
 ```
 
-It is important to emphasize that this API allows host to provide an additional path to a plugin which implements this interface. In other words, **not all plugin locations need to be known when `nvigiInit` is called**.
+It is important to emphasize that this API allows the host to provide an additional path to a plugin which implements this interface. In other words, **not all plugin locations need to be known when `nvigiInit` is called**.
 
 > NOTE:
 > This API will load and make resident in memory the shared library which matches the `PluginID` (unless it is already loaded due to earlier request for an interface it implements)
@@ -322,7 +336,7 @@ if(NVIGI_FAILED(result, nvigiGetInterfaceDynamic(nvigi::plugin::gpt::ggml::cuda:
 }
 ```
 
-When certain interface is no longer needed, it should to be unloaded so that the underlying shared library which implements it can be released. This is achieved with the following API:
+When a certain interface is no longer needed, it should be unloaded so that the underlying shared library which implements it can be released. This is achieved with the following API:
 
 ```cpp
 //! Unloads an interface for a specific NVIGI feature
@@ -349,48 +363,34 @@ Once successfully initialized the optional `nvigi::PluginAndSystemInformation`, 
 //! Replace $name::$backend::$api as appropriate
 if(NVIGI_FAILED(result, nvigi::getPluginStatus(info, nvigi::plugin::$name::$backend::$api::kId)))
 {
-  // Not supported, check the following sections to find out how to detect min spec for OS, drivers etc.
+  // Not supported, let's find out why
+  if(result == nvigi::kResultItemNotFound)
+  {
+    // Plugin is missing from the search paths provided in preferences
+  }
+  else if(result == nvigi::kResultMissingDynamicLibraryDependency)
+  {
+    // Check logs, shared libraries either missing or misplaced
+  }
+  else if(result == nvigi::kResultOSOutOfDate)
+  {
+    nvigi::Version version;
+    nvigi::getPluginRequiredOSVersion(info, nvigi::plugin::$name::$backend::$api::kId, version);
+  }
+  else if(result == nvigi::kResultDriverOutOfDate)
+  {
+    nvigi::Version version;
+    nvigi::getPluginRequiredAdapterDriverVersion(info, nvigi::plugin::$name::$backend::$api::kId, version);
+  }
+  else if(result == nvigi::kResultNoSupportedHardwareFound)
+  {
+    nvigi::VendorId vendor;
+    nvigi::getPluginRequiredAdapterVendor(info, nvigi::plugin::$name::$backend::$api::kId, vendor);
+    uint32_t arch; // 0 indicates any architecture is fine
+    nvigi::getPluginRequiredAdapterArchitecture(info, nvigi::plugin::$name::$backend::$api::kId, arch);
+  }
 }
 ```
-If plugin in question is not supportedt the following functions can be used to obtain more details:
-### Check For Minimum Required OS Version
-```cpp
-//! Replace $name::$backend::$api as appropriate
-nvigi::Version version;
-if(NVIGI_FAILED(result, nvigi::getPluginRequiredOSVersion(info, nvigi::plugin::$name::$backend::$api::kId, version)))
-{
-  // Not supported, check the version
-}
-```
-### Check For Minimum Required Adapter Driver Version
-```cpp
-//! Replace $name::$backend::$api as appropriate
-nvigi::Version version;
-if(NVIGI_FAILED(result, nvigi::getPluginRequiredAdapterDriverVersion(info, nvigi::plugin::$name::$backend::$api::kId, version)))
-{
-  // Not supported, check the version
-}
-```
-### Check For Minimum Required Adapter Vendor
-```cpp
-//! Replace $name::$backend::$api as appropriate
-nvigi::VendorId vendor;
-if(NVIGI_FAILED(result, nvigi::getPluginRequiredAdapterVendor(info, nvigi::plugin::$name::$backend::$api::kId, vendor)))
-{
-  // Not supported, check the vendor
-}
-```
-### Check For Minimum Required Adapter Architecture
-```cpp
-//! Replace $name::$backend::$api as appropriate
-uint32_t arch; // 0 indicates any architecture is fine
-if(NVIGI_FAILED(result, nvigi::getPluginRequiredAdapterArchitecture(info, nvigi::plugin::$name::$backend::$api::kId, arch)))
-{
-  // Not supported, check the architecture number
-}
-```
-If plugin in question is supported, next we can query if specific interface we are interested in is supported/implemented by the plugin:
-
 ### Check If Specific Plugin Exports An Interface
 ```cpp
 //! Replace $name::$backend::$api and $some_interface_name as appropriate
@@ -403,14 +403,23 @@ if(NVIGI_FAILED(result, nvigi::isPluginExportingInterface(info, nvigi::plugin::$
 > IMPORTANT:
 > At this point NO SHARED LIBRARIES (PLUGINS) ARE LOADED NOR RESIDENT IN MEMORY, only upon an explicit request for an interface implemented by a specific plugin will that plugin be loaded.
 
-## NVIGI and D3D Wrappers (e.g. Streamline)
+## D3D Considerations
+### Streamline
+Care should be taken when integrating NVIGI into an existing application that is also using a D3D object wrapper like Streamline. The queue/device parameters passed to NVIGI must be the **native** objects, not the app-level wrappers. In the case of Streamline, this means using `slGetNativeInterface` to retrieve the base interface object before passing it to NVIGI.
 
-Care should be taken when integrating NVIGI into an existing application that is also using a D3D object wrapper like Streamline.  The queue/device parameters passed to NVIGI must be the **native** objects, not the app-level wrappers.  In the case of Streamline, this means using `slGetNativeInterface` to retrieve the base interface object before passing it to NVIGI.
+### Microsoft Agility SDK
+Please note that D3D12 based plugins require a device which is at least SM 6.6 capable, this feature might not be available on all Windows versions therefore it must be enabled via the Agility SDK. The additional benefit of including the latest Agility SDK is the performance enhancement which comes with the introduction of the new heap type `D3D12_HEAP_TYPE_GPU_UPLOAD`. This new feature enables simultaneous CPU and GPU access to VRAM via the Resizable BAR (ReBAR) mechanism-was introduced to the DirectX 12 API through the Direct3D Agility SDK and corresponding Windows updates. This feature allows for more efficient data transfers, reducing the need for CPU-to-GPU copy operations and potentially improving performance in certain scenarios. For more details please visit https://devblogs.microsoft.com/directx/preview-agility-sdk-1-710-0/
+
+| Feature                | First Supported Windows OS                       | First Supported Agility SDK Version   |
+|------------------------|--------------------------------------------------|---------------------------------------|
+| GPU UPLOAD HEAP (ReBAR)| Windows 11 Insider Preview Build 26080 or later  | 1.613.0                               |
+
+> IMPORTANT: Please note that on some systems ReBAR must be explicitly enabled in the BIOS.
 
 ## 3rd Party Dependencies
 
 > **EXTREMELY IMPORTANT PLEASE READ**:
-> If host application is using the exact same dependency as NVIGI but different version this can lead to runtime issues and random crashes. Please contact NVIDIA do discuss possible solutions.
+> If the host application is using the exact same dependency as NVIGI but different version this can lead to runtime issues and random crashes. Please contact NVIDIA to discuss possible solutions.
 
 NVIGI SDK can come in various configurations (debug, release, production) which can contain different 3rd party dependencies. 
 
@@ -448,8 +457,8 @@ In addition to the above, please note the following:
 $some_path/nvigi
 │
 ├──nvigi.core.framework.dll
-├──nvigi.pugin.gpt.ggml.cuda.dll
-├──nvigi.pugin.asr.ggml.cuda.dll
+├──nvigi.plugin.gpt.ggml.cuda.dll
+├──nvigi.plugin.asr.ggml.cuda.dll
 ├──cudart64_12.dll
 ├──ggml_40f25557_cuda.dll
 └──zlib1.dll
@@ -473,7 +482,7 @@ GPT plugin(s)
 // Care must be taken not to duplicate plugins or dependencies in this setup
 $some_path/nvigi/gpt
 │
-├──nvigi.pugin.gpt.ggml.cuda.dll
+├──nvigi.plugin.gpt.ggml.cuda.dll
 └──tensorRT_10.dll // This is OK as long as other plugins don't use it, this is version 10
 ```
 ASR plugin(s)
@@ -481,7 +490,7 @@ ASR plugin(s)
 // Care must be taken not to duplicate plugins or dependencies in this setup
 $some_path/nvigi/asr
 │
-├──nvigi.pugin.asr.ggml.cuda.dll
+├──nvigi.plugin.asr.ggml.cuda.dll
 └──tensorRT_11.dll // This is OK as long as other plugins don't use it, this is version 11
 ```
 > NOTE: In the above example, if a new plugin is introduced and uses `tensorRT_10.dll` for example, this shared library now must move to `$some_path/nvigi/core` otherwise we have invalid configuration with duplicated dependency.
@@ -500,14 +509,14 @@ GPT plugin(s)
 ```cpp
 $some_path/nvigi/gpt
 │
-├──nvigi.pugin.gpt.ggml.cuda.dll
+├──nvigi.plugin.gpt.ggml.cuda.dll
 └──cudart64_12.dll // !!! duplicates NOT allowed
 ```
 ASR plugin(s)
 ```cpp
 $some_path/nvigi/asr
 │
-├──nvigi.pugin.asr.ggml.cuda.dll
+├──nvigi.plugin.asr.ggml.cuda.dll
 └──cudart64_12.dll // !!! duplicates NOT allowed
 ```
 
@@ -547,6 +556,8 @@ C:\ProgramData\NVIDIA\NVIGI\nvigi.test\1738350995226850
 ```
 
 The crash callstack is shown at the end of the log file, providing a detailed trace of the function calls leading to the exception. Developers can use this information to identify the source of the issue. 
+
+> NOTE: To capture as much as detail as possible tne verbose logging should be enabled and path to a log file must be provided when calling `nvigiInit`
 
 For example:
 

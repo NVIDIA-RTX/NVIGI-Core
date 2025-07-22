@@ -220,8 +220,9 @@ if __name__ == '__main__':
         
     # Simple for now.  High level, redactions
 
-    # EVERYONE gets the license!    
+    # EVERYONE gets the license and notice!    
     copy_list += CopySelect(src/'LICENSE.txt', dest_root)
+    copy_list += CopySelect(src/'NOTICE.txt', dest_root)
 
     # A few doc dependencies are in every pack
     copy_list += CopySelect(src/'docs/media/*.png', dest_root/'docs/media')
@@ -246,6 +247,9 @@ if __name__ == '__main__':
                 copy_list += CopySelect(cudaRt, dest_root/f'bin/{config}')
                 copy_list += CopySelect(cupti, dest_root/f'bin/{config}')
                 copy_list += CopySelect(cig_settings, dest_root/f'bin/{config}')
+        # AMD AGS but only if on Windows
+        if os.name == 'nt':
+            copy_list += CopySelect(src/'external/amd-ags/ags_lib/lib/amd_ags_x64.dll', dest_root/f'bin/{config}')
 
     # Next, the rest - docs, source, scripts, etc
     if args.config == 'runtime':

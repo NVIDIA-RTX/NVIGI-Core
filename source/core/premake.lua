@@ -56,4 +56,10 @@ project "nvigi.core.framework"
 		vpaths { ["version"] = {"./nvigi.framework/versions.h","./nvigi.framework/resource.h","./nvigi.framework/**.rc"}}
 	filter {}
 		
+	if os.ishost("windows") then
+		postbuildcommands {
+			'{COPYFILE} ../../external/amd-ags/ags_lib/lib/amd_ags_x64.dll %[%{cfg.buildtarget.directory}]'
+		}
+	end
+
 group ""

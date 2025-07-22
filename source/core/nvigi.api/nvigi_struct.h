@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -117,7 +117,8 @@ static_assert(std::alignment_of<PluginID>::value == 8, "NVIGI structure must hav
 //! IMPORTANT: 
 //! 
 //! * New members in the structure always go at the end!
-//! * Never add NVIGI structure as an embedded member of another NVIGI structure - this breaks ABI compatiblity! Use pointers or chaining instead.
+//! * Never add NVIGI structure as an embedded member of another NVIGI structure - this breaks ABI compatibility! Use pointers or chaining instead.
+//! * Chaining can fail when sharing the same structure across multiple chains which is NOT allowed unless the shared structure is the leaf (last item in all chains)
 
 //! Structure versions
 constexpr uint32_t kStructVersion1 = 1;
@@ -149,6 +150,8 @@ using NVIGIParameter = BaseStructure;
     UID getType() const { return _base.type;}                                                                         \
     inline operator BaseStructure* () { return &_base;}                                                               \
     inline operator const BaseStructure* () const { return &_base;}                                                   \
+    /* IMPORTANT: Chaining can fail when sharing the same structure across multiple chains.  */                       \
+    /* This is NOT allowed unless the shared structure is the leaf (last item in all chains) */                       \
     inline Result chain(BaseStructure* next)                                                                          \
     {                                                                                                                 \
         assert(next);                                                                                                 \

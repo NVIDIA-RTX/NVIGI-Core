@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -13,6 +13,7 @@
 #include <d3dkmdt.h>
 #include <dxgi1_6.h>
 #include "external/nvapi/nvapi.h"
+#include "external/amd-ags/ags_lib/inc/amd_ags.h"
 #else
 #include <array>
 #include <memory>
@@ -430,6 +431,9 @@ bool getSystemCaps(nvigi::VendorId forceAdapterId, uint32_t forceArchitecture, S
         }
     }
 
+    Adapter* nvdaAdapter = nullptr;
+    Adapter* amdAdapter = nullptr;
+
     IDXGIFactory4* factory;
     if (SUCCEEDED(CreateDXGIFactory(__uuidof(IDXGIFactory), (void**)&factory)))
     {
@@ -453,6 +457,16 @@ bool getSystemCaps(nvigi::VendorId forceAdapterId, uint32_t forceArchitecture, S
                     info->adapters[info->adapterCount]->deviceId = desc.DeviceId;
                     info->adapters[info->adapterCount]->dedicatedMemoryInMB = desc.DedicatedVideoMemory / (1024 * 1024);
                     info->adapters[info->adapterCount]->description = extra::utf16ToUtf8(desc.Description).c_str();
+
+                    if (vendor == VendorId::eNVDA)
+                    {
+                        nvdaAdapter = info->adapters[info->adapterCount];
+                    }
+                    else if (vendor == VendorId::eAMD)
+                    {
+                        amdAdapter = info->adapters[info->adapterCount];
+                    }
+
                     info->adapterCount++;
 
                     if (info->adapterCount == kMaxNumSupportedGPUs) break;
@@ -493,6 +507,8 @@ bool getSystemCaps(nvigi::VendorId forceAdapterId, uint32_t forceArchitecture, S
         factory->Release();
     }
 
+    // Only try NVAPI if there is NVDA adapter, otherwise we produce pointless warnings
+    if (nvdaAdapter)
     {
         NvU32 nvGPUCount{};
         NvPhysicalGpuHandle nvGPUHandle[NVAPI_MAX_PHYSICAL_GPUS]{};
@@ -565,10 +581,72 @@ bool getSystemCaps(nvigi::VendorId forceAdapterId, uint32_t forceArchitecture, S
         }
         else
         {
-            NVIGI_LOG_WARN("NVAPI failed to initialize, please update your driver if running on NVIDIA hardware");
+            NVIGI_LOG_WARN("NVAPI failed to initialize, please update your driver and check if NVAPI is correctly installed on your system");
         }
     }
+    else if (amdAdapter)
+    {
+        // Try AMD AGS
 
+        // Function pointer typedefs for AGS functions
+        typedef AGSReturnCode(*AGSInit)(int agsVersion, const AGSConfiguration* config, AGSContext** context, AGSGPUInfo* gpuInfo);
+        typedef AGSReturnCode(*AGSDeInit)(AGSContext* context);
+
+        // Load AMD AGS DLL dynamically
+        HMODULE agsLib = LoadLibraryW(L"amd_ags_x64.dll");
+        if (agsLib) {
+
+            // Get function pointers
+            AGSInit agsInitialize = (AGSInit)GetProcAddress(agsLib, "agsInitialize");
+            AGSDeInit agsDeInitialize = (AGSDeInit)GetProcAddress(agsLib, "agsDeInitialize");
+
+            if (!agsInitialize || !agsDeInitialize) {
+                NVIGI_LOG_WARN("Failed to obtain AMD AGS API, if running on AMD hardware make sure to update your driver");
+            }
+            else
+            {
+                // Initialize AGS
+                AGSContext* agsContext = nullptr;
+                AGSConfiguration config = {};
+                AGSGPUInfo gpuInfo = {};
+
+                AGSReturnCode result = agsInitialize(AGS_CURRENT_VERSION, &config, &agsContext, &gpuInfo);
+                if (result != AGS_SUCCESS) {
+                    NVIGI_LOG_WARN("Failed to initialize AMD AGS API with error code %u, if running on AMD hardware make sure to update your driver", result);
+                }
+                else
+                {
+                    info->driverVersion = { 0, 0, 0 };
+                    int items = std::sscanf(gpuInfo.radeonSoftwareVersion, "%d.%d.%d", &info->driverVersion.major, &info->driverVersion.minor, &info->driverVersion.build);
+
+                    // Check if exactly three numbers were parsed
+                    if (items != 3) {
+                        NVIGI_LOG_WARN("Invalid version format: expected YY.MM.DD, got '%s'", gpuInfo.driverVersion);
+                    }
+
+                    for (int i = 0; i < gpuInfo.numDevices; i++)
+                    {
+                        NVIGI_LOG_INFO("Found adapter '%s':", gpuInfo.devices[i].adapterString);
+                        NVIGI_LOG_INFO("# core clock: %u", gpuInfo.devices[i].coreClock);
+                        NVIGI_LOG_INFO("# memory clock: %u", gpuInfo.devices[i].memoryClock);
+                        NVIGI_LOG_INFO("# memory bandwidth: %u", gpuInfo.devices[i].memoryBandwidth);
+                        NVIGI_LOG_INFO("# numROPs: %u", gpuInfo.devices[i].numROPs);
+                        NVIGI_LOG_INFO("# teraFlops: %u", gpuInfo.devices[i].teraFlops);
+                        NVIGI_LOG_INFO("# driver: %u.%u.%u", info->driverVersion.major, info->driverVersion.minor, info->driverVersion.build);
+                    }
+
+                    // Cleanup
+                    agsDeInitialize(agsContext);
+                }
+            }
+            FreeLibrary(agsLib);
+        }
+        else
+        {
+            NVIGI_LOG_WARN("Failed to load AMD AGS library, please update your driver and check if AGS is correctly installed on your system");
+        }
+    }
+    
     if (modGDI32)
     {
         FreeLibrary(modGDI32);

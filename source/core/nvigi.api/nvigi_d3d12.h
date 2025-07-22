@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -63,10 +63,21 @@ using PFun_createCommittedResource = ID3D12Resource*(
     );
 using PFun_destroyResource = void(ID3D12Resource* pResource, void* userContext);
 
+//! D3D12Parameters flags
+//! 
+enum class D3D12ParametersFlags : uint64_t
+{
+    eNone = 0x00,
+    eDisableReBAR = 0x01,                    // Disable use of ReBAR (D3D12_HEAP_TYPE_GPU_UPLOAD) for this device
+    eComputeQueueSharedWithFrame = 0x02,     // Provided compute queue is used for main rendering (graphics) as well
+};
+
+NVIGI_ENUM_OPERATORS_64(D3D12ParametersFlags)
+
 // {957FF4D8-BF82-4FE4-B133-4C44764F2F77}
 struct alignas(8) D3D12Parameters {
     D3D12Parameters() {}; 
-    NVIGI_UID(UID({ 0x957ff4d8, 0xbf82, 0x4fe4,{ 0xb1, 0x33, 0x4c, 0x44, 0x76, 0x4f, 0x2f, 0x77 } }), kStructVersion2)
+    NVIGI_UID(UID({ 0x957ff4d8, 0xbf82, 0x4fe4,{ 0xb1, 0x33, 0x4c, 0x44, 0x76, 0x4f, 0x2f, 0x77 } }), kStructVersion3)
     ID3D12Device* device{};
     ID3D12CommandQueue* queue{}; // direct (graphics) queue
     // v2
@@ -76,6 +87,10 @@ struct alignas(8) D3D12Parameters {
     PFun_destroyResource* destroyResourceCallback{};
     void* createCommitResourceUserContext{};
     void* destroyResourceUserContext{};
+    // v3
+    D3D12ParametersFlags flags{}; // e.g eDisableReBAR, see above for all the flags
+
+    //! v4+ members go here, remember to update the kStructVersionN in the above NVIGI_UID macro!
 };
 
 NVIGI_VALIDATE_STRUCT(D3D12Parameters);

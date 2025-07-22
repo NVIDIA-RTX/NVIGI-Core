@@ -12,9 +12,15 @@
 		<package name="nlohmann_json" version="3.10.5.1-b440a32a-windows-x86_64" platforms="linux-x86_64"/>
 	</dependency>
 	<dependency name="nvapi" linkPath="external/nvapi">
-		<package name="nvapi" version="r530-public-windows-x86_64" platforms="windows-x86_64"/>
+		<package name="nvapi" version="r575-public-windows-x86_64" platforms="windows-x86_64"/>
+	</dependency>
+	<dependency name="amd-ags" linkPath="external/amd-ags">
+		<package name="amd-ags" version="6.2.0-x64-windows" platforms="windows-x86_64"/>
 	</dependency>
   <dependency name="cig_scheduler_settings" linkPath="external/cig_scheduler_settings">
-    <package name="cig_scheduler_settings_win64" version="202502282034-446fda24-main" platforms="windows-x86_64"/>
+    <package name="cig_scheduler_settings_win64" version="202507021723-ac549a08-main" platforms="windows-x86_64"/>
   </dependency>    
+  <dependency name="agility-sdk-code" linkPath="external/agility-sdk">
+    <package name="agility-sdk-code" version="1.615.1-x64-windows" platforms="windows-x86_64"/>
+  </dependency>
 </project>

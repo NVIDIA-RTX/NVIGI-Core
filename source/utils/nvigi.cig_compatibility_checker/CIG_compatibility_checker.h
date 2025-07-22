@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 #pragma once
@@ -227,22 +227,27 @@ namespace CIGCompatibilityChecker
         }
 #endif
         nvigi::D3D12Parameters cigParameters;
+        CUcontext cigContext;
         if (useCIG)
         {
             cigParameters = initCIG(nvigiLoadInterface);
+
+            // To get the max amount of shared memory supported by CIG we need to 
+            // create a CIG context. Note that we don't pass this context to the
+            // plugins under test, because we want to test the plugin's own
+            // call to create the CIG context
+            nvigi::IHWICuda* icig = nullptr;
+            bool success = nvigiGetInterfaceDynamic(nvigi::plugin::hwi::cuda::kId, &icig, nvigiLoadInterface);
+            nvigi::Result igierr = icig->cudaGetSharedContextForQueue(cigParameters, &cigContext);
+            checkAimErrors(igierr);
+
+            nvigiUnloadInterface(nvigi::plugin::hwi::cuda::kId, icig);
+        }
+        else
+        {
+            cigContext = gCtxBeforeTest;
         }
 
-        // To get the max amount of shared memory supported by CIG we need to 
-        // create a CIG context. Note that we don't pass this context to the
-        // plugins under test, because we want to test the plugin's own
-        // call to create the CIG context
-        CUcontext cigContext;
-        nvigi::IHWICuda* icig = nullptr;
-        bool success = nvigiGetInterfaceDynamic(nvigi::plugin::hwi::cuda::kId, &icig, nvigiLoadInterface);
-        nvigi::Result igierr = icig->cudaGetSharedContextForQueue(cigParameters, &cigContext);
-        checkAimErrors(igierr);
-
-        nvigiUnloadInterface(nvigi::plugin::hwi::cuda::kId, icig);
 
         HMODULE dll = LoadLibraryA("cig_scheduler_settings.dll");
         if (!dll)
@@ -257,6 +262,7 @@ namespace CIGCompatibilityChecker
         sched.ContextGetDefaultWorkloadType = (PFun_ContextGetDefaultWorkloadType*)GetProcAddress(dll, "ContextGetDefaultWorkloadType");
         sched.WorkloadTypeGetName = (PFun_WorkloadTypeGetName*)GetProcAddress(dll, "WorkloadTypeGetName");
 
+        if (cigContext)
         {
             cuerr = cuCtxSetCurrent(cigContext);
             checkCuErrors(cuerr);
@@ -264,13 +270,17 @@ namespace CIGCompatibilityChecker
             size_t availableSharedMemory = 0;
             int reservedSharedMemory = 0;
 
+            size_t cig{};
+            cuerr = cuCtxGetLimit(&cig, CU_LIMIT_CIG_ENABLED);
+            checkCuErrors(cuerr);
             cuerr = cuCtxGetLimit(&availableSharedMemory, CU_LIMIT_SHMEM_SIZE);
             checkCuErrors(cuerr);
             cuDeviceGetAttribute(&reservedSharedMemory, CU_DEVICE_ATTRIBUTE_RESERVED_SHARED_MEMORY_PER_BLOCK, 0);
             checkCuErrors(cuerr);
             gCheckerState.maxSharedMemBytesForCig = (uint32_t)availableSharedMemory - reservedSharedMemory;
 
-            NVIGI_LOG_INFO_ONCE("CIG Info: max shared memory bytes for CIG = %d\n", gCheckerState.maxSharedMemBytesForCig);
+            NVIGI_LOG_INFO_ONCE("CIG Info: max shared memory bytes for CIG = %d (CTX is %s)\n", gCheckerState.maxSharedMemBytesForCig,
+                cig ? "SUPPORTED" : "NOT SUPPORTED");
 
             cuerr = cuCtxSetCurrent(gCtxBeforeTest);
             checkCuErrors(cuerr);
@@ -280,7 +290,7 @@ namespace CIGCompatibilityChecker
     }
 
     // Call at end of test
-    bool check()
+    bool check(bool useCIG = true)
     {
 #ifdef NVIGI_DISABLE_CUPTI
         return true;
@@ -367,7 +377,7 @@ namespace CIGCompatibilityChecker
         bool contextsOk =
             gCheckerState.nonCigContextsUsed.size() == 0;
 
-        return gCheckerState.bytesUsedIsCigCompatible && contextsOk;
+        return !useCIG || (gCheckerState.bytesUsedIsCigCompatible && contextsOk);
     }
 
     // Size and alignment of the activity buffer
@@ -407,7 +417,7 @@ namespace CIGCompatibilityChecker
             uint32_t totalSharedMemBytes = pKernelRecord->staticSharedMemory +
                 pKernelRecord->dynamicSharedMemory;
 
-            if (pCheckerState->maxSharedMemBytesForCig < totalSharedMemBytes)
+            if (pCheckerState->maxSharedMemBytesForCig && (pCheckerState->maxSharedMemBytesForCig < totalSharedMemBytes))
             {
                 pCheckerState->bytesUsedIsCigCompatible = false;
 

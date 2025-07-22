@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -207,11 +207,6 @@ types::string getUTF8PathToDependencies()
 //! 
 Result checkPluginMinSpec(nvigi::plugin::PluginInfo* info)
 {
-    if (info->minDriver > ctx->caps.driverVersion)
-    {
-        NVIGI_LOG_ERROR("Driver out of date, expected %s detected %s", extra::toStr(info->minDriver).c_str(), extra::toStr(ctx->caps.driverVersion).c_str());
-        return nvigi::kResultDriverOutOfDate;
-    }
 #ifdef NVIGI_WINDOWS
     if (info->minOS > ctx->caps.osVersion)
     {
@@ -248,6 +243,12 @@ Result checkPluginMinSpec(nvigi::plugin::PluginInfo* info)
             NVIGI_LOG_WARN("Unable to find adapter supporting plugin, expected vendor 0x%x and GPU architecture %u", info->requiredVendor, info->minGPUArch);
             return nvigi::kResultNoSupportedHardwareFound;
         }
+    }
+    // Check driver version only if we passed the vendor test above
+    if (info->minDriver > ctx->caps.driverVersion)
+    {
+        NVIGI_LOG_ERROR("Driver out of date, expected %s detected %s", extra::toStr(info->minDriver).c_str(), extra::toStr(ctx->caps.driverVersion).c_str());
+        return nvigi::kResultDriverOutOfDate;
     }
     return kResultOk;
 }

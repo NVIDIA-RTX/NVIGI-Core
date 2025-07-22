@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -73,6 +73,9 @@ NVIGI_ENUM_OPERATORS_64(PreferenceFlags)
 
 //! Application preferences
 //!
+//! IMPORTANT: In non-production builds preferences can be overridden via the [nvigi.core.framework.json] file.
+//! If this file is present next to the [nvigi.core.framework.{dll|so}] it will be used to override the preferences.
+//!
 //! {1CA10965-BF8E-432B-8DA1-6716D879FB14}
 struct alignas(8) Preferences {
     Preferences() {}; 
@@ -125,7 +128,9 @@ using PFun_nvigiUnloadInterface = nvigi::Result(nvigi::PluginID feature, void* _
 //! @param sdkVersion Current SDK version
 //! @returns nvigi::kResultOk if successful, error code otherwise (see nvigi_result.h for details)
 //!
-//! This method is NOT thread safe.
+//! NOTE: On Windows, the host application is NOT supposed to change DLL search paths in any way while this method is running without proper synchronization.
+//! 
+//! This method is NOT thread safe and will temporarily change DLL search path on Windows.
 NVIGI_API nvigi::Result nvigiInit(const nvigi::Preferences &pref, nvigi::PluginAndSystemInformation** pluginInfo = nullptr, uint64_t sdkVersion = nvigi::kSDKVersion);
 
 //! Shuts down the NVIGI module
@@ -162,7 +167,9 @@ NVIGI_API nvigi::Result nvigiShutdown();
 //! // Dynamic `nvigi.core.framework` loading
 //! nvigiGetInterfaceDynamic(nvigi::plugin::gpt::ggml::cuda::kId, &igpt, nvigiLoadInterfaceFunction);
 //! 
-//! This method is NOT thread safe.
+//! NOTE: On Windows, the host application is NOT supposed to change DLL search paths in any way while this method is running without proper synchronization.
+//!
+//! This method is NOT thread safe and will temporarily change DLL search path on Windows.
 NVIGI_API nvigi::Result nvigiLoadInterface(nvigi::PluginID feature, const nvigi::UID& interfaceType, uint32_t interfaceVersion, void** _interface, const char* utf8PathToPlugin);
 
 //! Unloads an interface for a specific NVIGI feature

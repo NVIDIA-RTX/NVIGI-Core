@@ -1,6 +1,7 @@
 	nvigi-core-source/.gitattributes
 	nvigi-core-source/.gitignore
 	nvigi-core-source/LICENSE.txt
+	nvigi-core-source/NOTICE.txt
 	nvigi-core-source/README.md
 	nvigi-core-source/build.bat
 	nvigi-core-source/package.bat
@@ -77,6 +78,12 @@
 	nvigi-core-source\source\plugins\nvigi.hwi\cuda/resource.h
 	nvigi-core-source\source\plugins\nvigi.hwi\cuda/tests.h
 	nvigi-core-source\source\plugins\nvigi.hwi\cuda/versions.h
+	nvigi-core-source\source\plugins\nvigi.hwi\d3d12/d3d12Entry.cpp
+	nvigi-core-source\source\plugins\nvigi.hwi\d3d12/nvigi_hwi_d3d12.h
+	nvigi-core-source\source\plugins\nvigi.hwi\d3d12/plugin.rc
+	nvigi-core-source\source\plugins\nvigi.hwi\d3d12/premake.lua
+	nvigi-core-source\source\plugins\nvigi.hwi\d3d12/resource.h
+	nvigi-core-source\source\plugins\nvigi.hwi\d3d12/versions.h
 	nvigi-core-source\source\plugins\nvigi.template.generic/nvigi_template.h
 	nvigi-core-source\source\plugins\nvigi.template.generic/premake.lua
 	nvigi-core-source\source\plugins\nvigi.template.generic\backend/nvcf.h
@@ -112,6 +119,7 @@
 	nvigi-core-source\source\utils\nvigi.ai/nvigi_stl_helpers.h
 	nvigi-core-source\source\utils\nvigi.ai/tests.h
 	nvigi-core-source\source\utils\nvigi.cig_compatibility_checker/CIG_compatibility_checker.h
+	nvigi-core-source\source\utils\nvigi.d3d12/d3d12_helpers.h
 	nvigi-core-source\source\utils\nvigi.dsound/player.h
 	nvigi-core-source\source\utils\nvigi.dsound/recorder.h
 	nvigi-core-source\source\utils\nvigi.hwi\cuda/push_poppable_cuda_context.h

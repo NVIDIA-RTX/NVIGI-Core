@@ -1,12 +1,12 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
 #pragma once
 
 #define NVIGI_CORESDK_VERSION_MAJOR 1
-#define NVIGI_CORESDK_VERSION_MINOR 1
-#define NVIGI_CORESDK_VERSION_PATCH 1
+#define NVIGI_CORESDK_VERSION_MINOR 2
+#define NVIGI_CORESDK_VERSION_PATCH 0
 
 #define NVIGI_CORESDK_API_VERSION_MAJOR 0
 #define NVIGI_CORESDK_API_VERSION_MINOR 0

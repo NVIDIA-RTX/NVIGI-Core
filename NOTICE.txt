@@ -1,0 +1,1 @@
+Some of the models you may download with the NVIDIA In-Game Inferencing (NVIGI) SDK have been designed for gaming or other applications that involve roleplay. As such, the outputs of these models may be violent, offensive or indecent. By using these models, you assume the risk of any harm caused by any response or output of them. 

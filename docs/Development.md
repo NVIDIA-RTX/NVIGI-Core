@@ -17,7 +17,7 @@ Non-exhaustive examples of changes that break ABI (expounded further below):
 * Size of a member (i.e. changing ``char buffer[128]`` to ``char buffer[256]``)
 * Using nested structures (i.e. struct B { A a}, any change in size for struct A breaks the expected offsets and/or alignment for struct B)
 
-Making these types of changes is acceptable **only when working on plugin's INTERNAL data structures and APIs** which are NOT shared across plugin boundaries.
+Making these types of changes is acceptable **only when working on the plugin's INTERNAL data structures and APIs** which are NOT shared across plugin boundaries.
 
 ## Implementing a Plugin
 
@@ -31,7 +31,7 @@ Making these types of changes is acceptable **only when working on plugin's INTE
   * Never use virtual functions, volatile members or STL types (`std::vector` etc.) in shared interfaces
   * Never change or reorder existing members in any shared data or interfaces
   * Never use nested structures, always use pointer members
-* **Do NOT forget to clearly mark your exported methods as thread safe of not** - this is normally done in the comment section above the function declaration.
+* **Do NOT forget to clearly mark your exported methods as thread safe or not** - this is normally done in the comment section above the function declaration.
 * **Do NOT duplicate interface or plugin GUIDs** - always create new GUID when cloning an existing interface or data structure
 * **Do NOT ship plugins unless they are PRODUCTION builds, DIGITALLY SIGNED and packaged on GitLab or TeamCity**
   * Shipping non production builds or any builds from someones local machine is strictly forbidden
@@ -43,10 +43,10 @@ Making these types of changes is acceptable **only when working on plugin's INTE
   * This allows us to catch any exceptions out in the wild and produce mini-dumps for debugging
 * If your plugin has custom error codes make sure to follow the guidelines provided in `nvigi_result.h`
 * If a large memory allocation needs to cross plugin (NOT host) boundaries you must use `nvigi::types::string or vector`
-  * This ensures C ABI compatibility and consistent memory allocation and de-allocation (see bellow for assistance if new data type needs to be implemented)
+  * This ensures C ABI compatibility and consistent memory allocation and de-allocation (see below for assistance if new data type needs to be implemented)
 * When accessing shared data or interfaces which are version 2 or higher **always check the version before accessing any members**
 
-It is worth noting that there are some exceptions when it comes to C ABI compatibility compliance and rules. They apply **only to the NON PRODUCTION plugins** which are used as helpers or debugging tools. Good example would be the `nvigi.plugin.imgui`, it is perfectly fine to use STL `std::function` and lambdas to provide UI rendering functions for your plugin(s) **as long as these code section are compiled out in production**.
+It is worth noting that there are some exceptions when it comes to C ABI compatibility compliance and rules. They apply **only to the NON PRODUCTION plugins** which are used as helpers or debugging tools. A good example would be the `nvigi.plugin.imgui`, it is perfectly fine to use STL `std::function` and lambdas to provide UI rendering functions for your plugin(s) **as long as these code sections are compiled out in production**.
 
 ### Thread Safety
 
@@ -160,7 +160,7 @@ Here are the basic steps for setting up a new plugin performing **AI inference**
 * Clone `nvigi.template.inference` folder and rename it to your plugin's name
 * Rename public header `nvigi_template.h` to match your name
 * Search for "tmpl", "template", "Template" and "TEMPLATE" and replace with your name
-* Run `[sdk]/bin/x64/nvigi.tool.utils.exe --plugin nvigi.plugin.$name.$backend{.$api}` to obtain UID and crc24 and paste that in the public header `nvigi_$name.h` under `namespace nvigi::$mynamspace`
+* Run `[sdk]/bin/x64/nvigi.tool.utils.exe --plugin nvigi.plugin.$name.$backend{.$api}` to obtain UID and crc24 and paste that in the public header `nvigi_$name.h` under `namespace nvigi::$mynamespace`
 * Rename folder `backend` to match target backend you are using (`ggml`, `cuda`, `trt`, `vk` etc.)
   * Add more backends as needed if your plugin supports more than one (see gpt plugin for details)
   * Ideally, all backends should implement the same interface declared in `nvigi_myplugin.h`
@@ -177,7 +177,7 @@ Here are the basic steps for setting up a new plugin performing **completely gen
 * Clone `nvigi.template.generic` folder and rename it to your plugin's name
 * Rename public header `nvigi_template.h` to match your name
 * Search for "tmpl", "template", "Template" and "TEMPLATE" and replace with your name
-* Run `[sdk]/bin/x64/nvigi.tool.utils.exe --plugin nvigi.plugin.$name.$backend{.$api}` to obtain UID and crc24 and paste that in the public header `nvigi_$name.h` under `namespace nvigi::$mynamspace`
+* Run `[sdk]/bin/x64/nvigi.tool.utils.exe --plugin nvigi.plugin.$name.$backend{.$api}` to obtain UID and crc24 and paste that in the public header `nvigi_$name.h` under `namespace nvigi::$mynamespace`
 
 Some examples, `nvigi.plugin.hwi.cuda`, `nvigi.plugin.imgui.d3d12` etc.
 
@@ -220,7 +220,7 @@ components = {
   * Please make sure to include both Windows and Linux 3rd party packages
   * Update 3rd party licensing document in the root folder (SWIPAT is required to use 3rd party software)
   * If `packman` does not have your package and the package itself is not large, it is fine to simply check it in, for example see `source/plugins/nvigi.gpt/ggml/external/`  
-* Update `premake.lua` in your plugin's directory to include everythign your project needs and make sure path to it is listed correctly in your `component` section, an example:
+* Update `premake.lua` in your plugin's directory to include everything your project needs and make sure path to it is listed correctly in your `component` section, an example:
 ```py
 'premake': 'source/plugins/nvigi.asr/ggml/premake.lua',
 ```
@@ -292,7 +292,7 @@ TEST_CASE("template_backend", "[tag1],[tag2]")
 * Execute `run.{bat,sh} --tags "[mytag1],[mytag2],..." --models $path_to_nvigi_models --audio $path_to_wav_file` to trigger your test and make sure it is passing
 
 > **IMPORTANT**:
-> Unit test always runs in the `_sdk/bin/x64` folder so make sure to package your plugin first before running unit tests.
+> Unit tests always runs in the `_sdk/bin/x64` folder so make sure to package your plugin first before running unit tests.
 
 ### UI Rendering with ImGui
 
@@ -344,7 +344,7 @@ else
 
 ### Exception Handling
 
-When implementing custom API in your exported interface always make sure to wrap your functions using the `NVIGI_CATCH_EXCEPTION` macro. Here is an example on an interface implementation:
+When implementing custom APIs in your exported interface always make sure to wrap your functions using the `NVIGI_CATCH_EXCEPTION` macro. Here is an example on an interface implementation:
 
 ```cpp
 //! Example interface implementation
@@ -452,7 +452,7 @@ This section provides more information about developing hybrid AI (local and clo
 
 #### Inference API
 
-**All hybrid AI plugins should implement similar API** based on what is described in the [hybrid AI guide](./HybridAI.md) and implemented in [nvigi_ai.h](../source/utils/nvigi.ai/nvigi_ai.h)
+**All hybrid AI plugins should implement similar APIs** based on what is described in the [hybrid AI guide](./HybridAI.md) and implemented in [nvigi_ai.h](../source/utils/nvigi.ai/nvigi_ai.h)
 
 #### AI Model File Structure
 
@@ -496,7 +496,7 @@ nvigi.models/
 │       └── nvigi.model.config.json
 ```
 
-Each model must provide `nvigi.model.config.json` file containing model's name, vram consumption and other model specific information. Here is an example from `nvigi.plugin.a2f.trt`:
+Each model must provide an `nvigi.model.config.json` file containing the model's name, vram consumption and other model specific information. Here is an example from `nvigi.plugin.a2f.trt`:
 
 ```json
 {

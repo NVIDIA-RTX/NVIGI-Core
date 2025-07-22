@@ -1,7 +1,5 @@
 # NVIDIA In-Game Inference Core
 
-Version 1.1.1
-
 In-Game Inferencing (NVIGI) is an open-sourced cross platform solution that simplifies integration of the latest NVIDIA and other provider's technologies into applications and games. This framework allows developers to easily implement one single integration and enable multiple technologies supported by the hardware vendor or cloud provider. Supported technologies include AI inference but, due to the generic nature of the NVIGI SDK, can be expanded to graphics or any other field of interest.
 
 For high-level details of NVIGI, as well as links to the official downloads for the priduct, see [NVIDIA In-Game Inferencing](https://developer.nvidia.com/rtx/in-game-inferencing)

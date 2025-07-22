@@ -5,8 +5,6 @@ This guide primarily focuses on the general use of the AI plugins performing loc
 
 > **IMPORTANT**: This guide might contain pseudo code, for the up to date implementation and source code which can be copy pasted please see the [basic sample](../source/samples/nvigi.basic/basic.cpp)
 
-## Version 1.1.0 Release
-
 ## Table of Contents
 - [Introduction](#introduction)
 - [Key Concepts](#key-concepts)
@@ -34,9 +32,9 @@ NVIGI AI plugins provide unified API for both local and cloud inference. This en
 
 ## Key Concepts
 
-* Each AI plugin implements certain feature with the specific backend and underlying API, here are some examples:
+* Each AI plugin implements certain features with the specific backend and underlying API, here are some examples:
     *  nvigi.plugin.gpt.ggml.cuda -> implements GPT feature using **GGML backend and CUDA API for local execution**
-    *  nvigi.plugin.gpt.cloud.rest -> implements GPT feature using **CLOUD backed and REST API for remote execution**
+    *  nvigi.plugin.gpt.cloud.rest -> implements GPT feature using **CLOUD backend and REST API for remote execution**
 * Models used by the AI **local** plugins are stored in a specific NVIGI model repository (more details in sections below)  
 * All AI plugins implement and export the same generic interface `InferenceInterface`
 * AI plugins can act as "parent" plugins encapsulating multiple features but still exposing the same unified API
@@ -132,7 +130,7 @@ $ROOT/
 
 ### Local Execution
 
-As mentioned in the above section, each model configuration JSON contains model card with instructions on how to obtain each model.
+As mentioned in the above section, each model configuration JSON contains a model card with instructions on how to obtain each model.
 
 To add new local model to the model repository please follow these steps:
 
@@ -149,7 +147,7 @@ To add new local model to the model repository please follow these steps:
 
 #### Prompt Templates for LLM Models
 
-Each LLM required correct prompt template. These templates are stored in the above mentioned model configuration JSON and look something like this:
+Each LLM requirs a correct prompt template. These templates are stored in the above mentioned model configuration JSON and look something like this:
 ```json
 "prompt_template": [
     "<|begin_of_text|>",
@@ -228,7 +226,7 @@ To add new remote (cloud) model to the model repository please follow these step
 * Modify `name` field in the JSON to match your model
 * Modify `request_body` field to match your model's JSON body for the REST request
 
-If using [NVIDIA NIM APIs](https://build.nvidia.com) search and navigate to the model you want to use then copy paste request into the above mentioned JSON. For example, when selecting [llama-3_1-70b-instruct](https://build.nvidia.com/meta/llama-3_1-70b-instruct) the completion code in Python looks like this:
+If using [NVIDIA NIM APIs](https://build.nvidia.com) search and navigate to the model you want to use then copy/paste the request into the above mentioned JSON. For example, when selecting [llama-3_1-70b-instruct](https://build.nvidia.com/meta/llama-3_1-70b-instruct) the completion code in Python looks like this:
 
 ```python
 completion = client.chat.completions.create(
@@ -336,9 +334,9 @@ When obtaining information about specific model(s) host application can provide 
 * provide specific model GUID to obtain CloudCapabilities which include URL and other information for the endpoint used by the model
 * provide null model GUID to get a list of ALL models (CloudCapabilities in this case will NOT provide any info)
 
-If specific feature has custom capabilities and requirements the common ones will always be either chained together or returned as a pointer within the custom caps. In addition, if feature is a pipeline (parent plugin encapsulating two or more plugins) it will return caps and requirements for ALL enclosed plugins.  These can be queryied from what is returned by the parent plugin's `getCapsAndRequirements` using `nvigi::findStruct<structtype>(rootstruct)`.
+If specific feature has custom capabilities and requirements the common ones will always be either chained together or returned as a pointer within the custom caps. In addition, if feature is a pipeline (parent plugin encapsulating two or more plugins) it will return caps and requirements for ALL enclosed plugins.  These can be queried from what is returned by the parent plugin's `getCapsAndRequirements` using `nvigi::findStruct<structtype>(rootstruct)`.
 
-> IMPORTANT: Always have a look at plugin's public header `nvigi_$feature.h` to find out if plugin has custom caps etc.
+> IMPORTANT: Always have a look at the plugin's public header `nvigi_$feature.h` to find out if the plugin has custom caps etc.
 
 ## Creation Parameters
 
@@ -371,7 +369,7 @@ Plugins cannot create an instance unless they know where NVIGI models repository
 
 ### Cloud Plugins
 
-When it comes to cloud plugins they can use two different protocols, REST and gRPC. In addition to the above mentioned common creation parameters cloud plugin require either `RESTParameters` or `RPCParameters` to be chained together with the common ones. Here is an example:
+When it comes to cloud plugins, they can use two different protocols, REST and gRPC. In addition to the above mentioned common creation parameters, cloud plugins require either `RESTParameters` or `RPCParameters` to be chained together with the common ones. Here is an example:
 
 ```cpp
 
@@ -416,7 +414,7 @@ With local plugins there are few key points to consider when selecting which plu
 * How much VRAM can be used?
 * What is the expected latency?
 
-For example fully GPU bottle-necked application or application which does not have enough VRAM left could do the following and run GPT inference completely on the CPU:
+For example fully GPU bottlenecked application or application which does not have enough VRAM left could do the following and run GPT inference completely on the CPU:
 
 ```cpp
 //! Obtain GPT GGML CPU interface
@@ -424,7 +422,7 @@ nvigi::IGeneralPurposeTransformer* igpt{};
 nvigiGetInterface(plugin::gpt::ggml::cpu::kId, &igpt);
 ```
 
-On the other hand, CPU bottle-necked application could do the following and run GPT inference completely on the GPU:
+On the other hand, CPU bottlenecked application could do the following and run GPT inference completely on the GPU:
 
 ```cpp
 //! Obtain GPT GGML CUDA interface
@@ -484,7 +482,7 @@ nvigi::InferenceDataTextSTLHelper userPrompt(text);
 
 ## Input Slots
 
-Once we have our instance we need to provide input data slots that match the input signature for the given instance. The `InferenceInstance` provides and API to obtain input and output signatures at runtime but they can also be obtained from plugin's headers and source code. In this guide we will use the Automated Speech Recognition (ASR) as an example.
+Once we have our instance we need to provide input data slots that match the input signature for the given instance. The `InferenceInstance` provides an API to obtain input and output signatures at runtime but they can also be obtained from the plugin's headers and source code. In this guide we will use the Automated Speech Recognition (ASR) as an example.
 
 ```cpp
 //! Audio data slot is coming from our previous step, note that we are using operator to convert audioData to InferenceDataAudio*
@@ -495,7 +493,7 @@ nvigi::InferenceDataSlotArray inputs = { slots.size(), slots.data() }; // Input 
 
 ## Execution Context
 
-Before instance can be evaluated the `InferenceExectionContext` must be created and populated with all the necessary information. This context contains:
+Before the instance can be evaluated the `InferenceExecutionContext` must be created and populated with all the necessary information. This context contains:
 
 * pointer to the instance to use
 * pointer to the optional callback to receive results
@@ -508,7 +506,7 @@ The following sections contain examples showing how to utilize execution context
 
 ### Blocking Vs Asynchronous Evaluation
 
-Each plugin can opt to implement blocking and/or non-blocking API used to evaluate instance (essentially run an inference pass). For example:
+Each plugin can opt to implement blocking and/or non-blocking APIs used to evaluate the instance (essentially run an inference pass). For example:
 
 ```cpp
 nvigi::InferenceExecutionContext ctx{};
@@ -531,12 +529,12 @@ ctx.instance->evaluate(&ctx)
 
 There are two ways to obtain results:
 
-* By providing callback in the `InferenceExectionContext` and receiving results either on host's or NVIGI's thread
+* By providing callback in the `InferenceExecutionContext` and receiving results either on host's or NVIGI's thread
 * By NOT providing a callback and forcing `evaluateAsync` path, which results in requiring host app to poll for result.
 
 ### Callback Approach
 
-This is the simplest and easiest way to obtain results. Callback function of the following type must be provided via `InferenceExectionContext` before calling evaluate:
+This is the simplest and easiest way to obtain results. Callback function of the following type must be provided via `InferenceExecutionContext` before calling evaluate:
 
 ```cpp
 auto inferenceCallback = [](const nvigi::InferenceExecutionContext* execCtx, nvigi::InferenceExecutionState state, void* userData)->nvigi::InferenceExecutionState 
@@ -581,14 +579,14 @@ if(NVIGI_FAILED(res, asrContext.instance->evaluate(asrContext)))
 
 > IMPORTANT: This is an optional way to obtain results and each individual plugin must implement special interface `nvigi::IPolledInferenceInterface` in order to enable this functionality. In addition, when using polling, `evaluateAsync` is the ONLY viable inference model since we cannot have blocking calls.
 
-Before proceeding any further it is necessary to obtain polling interface from the plugin, assuming it is actually implemented:
+Before proceeding any further, it is necessary to obtain the polling interface from the plugin, assuming it is actually implemented:
 
 ```cpp
 nvigi::IPolledInferenceInterface* ipolled{};
 nvigiGetInterface(feature, &ipolled);
 ```
 
-Upon successful retrieval of the polling interface the next step is to skip providing callback in the execution context. This will automatically make evaluate call async (plugin will generate and manage a thread) and host application will need to check if results are ready before consuming them.
+Upon successful retrieval of the polling interface, the next step is to skip providing a callback to the execution context. This will automatically make evaluate call async (plugin will generate and manage a thread) and host application will need to check if results are ready before consuming them.
 
 ```cpp
 

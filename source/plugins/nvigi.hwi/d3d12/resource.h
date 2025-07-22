@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
+
 #include "versions.h"
 #include "../../../_artifacts/gitVersion.h"
 
@@ -14,8 +15,8 @@
 #define VER_PRODUCTVERSION_STR      STR(VER_PRODUCTVERSION)
 
 #define VER_COMPANYNAME_STR         "NVIDIA"
-#define VER_FILEDESCRIPTION_STR     "NVIGI.TEMPLATE PLUGIN - " DISTRIBUTION_INFO
-#define VER_INTERNALNAME_STR        "NVIGI.TEMPLATE"
+#define VER_FILEDESCRIPTION_STR     "NVIGI.HWI.D3D12 PLUGIN - " DISTRIBUTION_INFO
+#define VER_INTERNALNAME_STR        "NVIGI.HWI.D3D12"
 #define VER_LEGALCOPYRIGHT_STR      "Copyright 2024-2025 NVIDIA CORP"
 #define VER_LEGALTRADEMARKS1_STR    "All Rights Reserved"
 #define VER_LEGALTRADEMARKS2_STR    VER_LEGALTRADEMARKS1_STR

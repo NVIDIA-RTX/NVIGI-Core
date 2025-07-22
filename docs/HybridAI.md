@@ -14,9 +14,9 @@ For detailed explanation on how to integrate AI features in your application ple
 :align: center
 ```
 
-* NVIGI plugins implement inference for various AI models (ASR, GPT, Riva, Nemo, Audio2Face etc.) using variety of backends like for example TRT, GGML, cuGfx etc.
+* NVIGI plugins implement inference for various AI models (ASR, GPT, Riva, Nemo, Audio2Face etc.) using a variety of backends like for example TRT, GGML, cuGfx etc.
 * Each plugin supports hybrid execution model by implementing any combination of backend "locations": CPU, GPU or CLOUD
-  * Considering that 97% of gamers have <=8GB of VRAM the open-sourced library GGML is very important part of this solution since it allows execution on CPU, GPU, mix between CPU/GPU or even mix between multiple GPUs if gamers keep their older cards
+  * Considering that 97% of gamers have <= 8GB of VRAM the open-sourced library GGML is very important part of this solution since it allows execution on CPU, GPU, mix between CPU/GPU or even mix between multiple GPUs if gamers keep their older cards
 * Same code base and interchangeable API is used for Windows and Linux
 * Games use the same NVIGI SDK C++ API directly since it provides lowest possible latency
 * Other Windows applications can use:
@@ -52,11 +52,11 @@ Each instance reports input and output signature with names and data type so it 
 ```
 
 > NOTE:
-> Some inputs can be optional while others are mandatory, each input slot in the signature contains flag indicating which is which
+> Some inputs can be optional while others are mandatory, each input slot in the signature contains a flag indicating which is which
 
 ### Instance Evaluation
 
-Once instance is created and all inputs for it have been generated and provided, that instance can be evaluated to produce inferred results which is returned to the host via callback.
+Once an instance is created and all inputs for it have been generated and provided, that instance can be evaluated to produce inferred results which are returned to the host via callback.
 
 ```{image} media/hybridai_api_instance_eval.svg
 :alt: hybridai_api_instance_eval
@@ -93,7 +93,7 @@ Once instance is created and all inputs for it have been generated and provided,
 Here is an example of a potential optimization in case of the `ACE` pipeline:
 
 * Host can create local (CPU/GPU) instances for the `ASR`, `GPT`, `textToSpeech`, `audio2face` and `audio2emotion` for example
-* If latency is too high, there is not enough VRAM NVIGI can decide to offload certain stages to the cloud as show in the diagram below
+* If latency is too high, there is not enough VRAM NVIGI can decide to offload certain stages to the cloud as shown in the diagram below
 
 ```{image} media/hybridai_ace_pipeline.svg
 :alt: hybridai_ace_pipeline
