@@ -16,13 +16,26 @@ TEST_CASE("template_backend_inference", "[tag1],[tag2]")
 {
     //! Use global params as needed (see source/tests/ai/main.cpp for details and add modify if required)
 
-    nvigi::ITemplate* itemplate{};
-    nvigiGetInterfaceDynamic(plugin::tmpl::kIdBackendApi, &itemplate, params.nvigiLoadInterface);
+    nvigi::ITemplateInfer* itemplate{};
+    nvigiGetInterfaceDynamic(plugin::tmpl_infer::kIdBackendApi, &itemplate, params.nvigiLoadInterface);
     REQUIRE(itemplate != nullptr);
 
     // Get instance(s) from your interface, run tests, check results etc.
+    nvigi::TemplateInferCreationParameters createParams{};
+    nvigi::CommonCreationParameters commonParams{};
+    createParams.chain(commonParams);
+	commonParams.utf8PathToModels = params.modelDir.c_str();
+    commonParams.modelGUID = "{01234567-0123-0123-0123-0123456789AB}";
 
-    auto res = params.nvigiUnloadInterface(plugin::tmpl::kIdBackendApi, itemplate);
+    nvigi::Result result;
+    nvigi::InferenceInstance* templateInstance{};
+    result = itemplate->createInstance(createParams, &templateInstance);
+	REQUIRE(result == nvigi::kResultOk);
+
+    result = itemplate->destroyInstance(templateInstance);
+    REQUIRE(result == nvigi::kResultOk);
+
+    auto res = params.nvigiUnloadInterface(plugin::tmpl_infer::kIdBackendApi, itemplate);
     REQUIRE(res == nvigi::kResultOk);
 }
 

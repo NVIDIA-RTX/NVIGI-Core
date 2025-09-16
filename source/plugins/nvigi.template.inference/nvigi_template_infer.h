@@ -30,7 +30,6 @@ const char* kTemplateInputSlotC = "inputSlotC";
 struct alignas(8) TemplateInferCreationParameters {
     TemplateInferCreationParameters() {};
     NVIGI_UID(UID({ 0x78149310, 0x8761, 0x4204,{0xaa, 0x00, 0xfb, 0x17, 0xd8, 0x12, 0x0f, 0x0a} }), kStructVersion1)
-    CommonCreationParameters* common;
 };
 
 NVIGI_VALIDATE_STRUCT(TemplateInferCreationParameters)

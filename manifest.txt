@@ -5,14 +5,15 @@
 	nvigi-core-source/README.md
 	nvigi-core-source/build.bat
 	nvigi-core-source/package.bat
-	nvigi-core-source/package.py
-	nvigi-core-source/premake.lua
-	nvigi-core-source/project.xml
 	nvigi-core-source/setup.bat
+	nvigi-core-source\data\nvigi.models\nvigi.plugin.template.inference\{01234567-0123-0123-0123-0123456789AB}/nvigi.model.config.json
+	nvigi-core-source\data\nvigi.models\nvigi.plugin.template.inference\{01234567-0123-0123-0123-0123456789AB}/my_model.my_ext1
+	nvigi-core-source\data\nvigi.models\nvigi.plugin.template.inference\{01234567-0123-0123-0123-0123456789AB}/my_model.my_ext2
+	nvigi-core-source\docs/3rd-party-licenses.md
 	nvigi-core-source\docs/Architecture.md
-	nvigi-core-source\docs/Development.md
 	nvigi-core-source\docs/GpuSchedulingForAI.md
 	nvigi-core-source\docs/HybridAI.md
+	nvigi-core-source\docs/PluginDevelopment.md
 	nvigi-core-source\docs/ProgrammingGuide.md
 	nvigi-core-source\docs/ProgrammingGuideAI.md
 	nvigi-core-source\docs\media/guid-1.png
@@ -132,16 +133,15 @@
 	nvigi-core-source\tools/lf2crlf.ps1
 	nvigi-core-source\tools/project.tools.xml
 	nvigi-core-source\tools/vswhere.exe
-	nvigi-core-source\tools\packman/config.packman.xml
-	nvigi-core-source\tools\packman/config.sdk.packman.xml
+	nvigi-core-source\tools\packaging/nvigi_utils.py
+	nvigi-core-source\tools\packaging/package.py
 	nvigi-core-source\tools\packman/packman.cmd
-	nvigi-core-source\tools\packman/packman.sh
 	nvigi-core-source\tools\packman/packmanconf.py
 	nvigi-core-source\tools\packman/python.bat
-	nvigi-core-source\tools\packman/python.sh
 	nvigi-core-source\tools\packman\bootstrap/configure.bat
 	nvigi-core-source\tools\packman\bootstrap/download_file_from_url.ps1
 	nvigi-core-source\tools\packman\bootstrap/fetch_file_from_packman_bootstrap.cmd
 	nvigi-core-source\tools\packman\bootstrap/generate_temp_file_name.ps1
 	nvigi-core-source\tools\packman\bootstrap/generate_temp_folder.ps1
 	nvigi-core-source\tools\packman\bootstrap/install_package.py
+	nvigi-core-source\tools\packman\config.packman.xml

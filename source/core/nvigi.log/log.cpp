@@ -104,6 +104,54 @@ static FILE* _fsopen(const char* utf8_filename, const char* utf8_mode, int /*sha
 NVIGI_IGNOREWARNING_POP
 #endif
 
+std::string getCurrentDateTime() {
+    // Get current time as time_point
+    auto now = std::chrono::system_clock::now();
+    auto nowAsTimeT = std::chrono::system_clock::to_time_t(now);
+    auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+
+    // Convert to tm struct
+    std::tm nowTm = *std::localtime(&nowAsTimeT);
+
+    // Format date and time
+    std::ostringstream dateTimeStream;
+    dateTimeStream << std::put_time(&nowTm, "%Y-%m-%d %H:%M:%S");
+    dateTimeStream << '.' << std::setfill('0') << std::setw(3) << nowMs.count();
+
+    return dateTimeStream.str();
+}
+
+std::string generateHeader(const char* fl, int l, const char* fn, int t, const char* customTag)
+{
+    std::ostringstream oss;
+    try
+    {
+        // Filename
+        std::string f(fl);
+        // file is constexpr so always valid and always will have at least one '\'
+        f = f.substr(f.rfind('\\') + 1);
+
+        // Log type
+        static std::string prefix[] = { "info","warn","error" };
+        static_assert(countof(prefix) == (size_t)LogType::eCount);
+
+        // Put it all together in the message header
+        oss << "[" << getCurrentDateTime() << "]" << "[nvigi][" << prefix[t] << "]";
+        if (customTag)
+        {
+            oss << "[" << customTag << "]";
+        }
+        oss << "[" << f << ":" << l << "]" << "[" << fn << "]";
+        return oss.str();
+    }
+    catch (const std::exception&)
+    {
+        oss.clear();
+        oss << std::string(customTag);
+    }
+    return oss.str();
+}
+
 struct Log
 {
     std::hash<std::string> m_hash;
@@ -111,18 +159,20 @@ struct Log
     std::atomic<bool> m_pathInvalid = false;
     std::string m_path;
     std::string m_name;
+    std::string m_filePath;
     LogLevel m_logLevel = LogLevel::eVerbose;
     std::atomic<bool> m_consoleActive = false;
     FILE* m_file = {};
     PFun_LogMessageCallback* m_logMessageCallback = {};
-    
+    Result m_result = kResultOk;
+
     Log() {}
 
     void print(ConsoleForeground color, LogType type, const std::string &logMessage)
     {
 #ifdef NVIGI_WINDOWS
         // Set attribute for newly written text
-        if (m_consoleActive)
+        if (m_consoleActive.load())
         {
             SetConsoleTextAttribute(m_outHandle, color);
             DWORD OutChars;
@@ -229,37 +279,8 @@ const char* getLogPath()
 void setLogPath(const char* _path)
 {
     auto& ctx = *Log::s_log;
-    std::u8string path;
-    // Handle long paths for logging as needed on Windows platform
-    if(_path)
-    {
-        if (!nvigi::file::getOSValidPath((const char8_t*)_path, path)) 
-        {
-            // In the middle of setting up logging so just try to print to console or callback
-            ctx.print(RED, LogType::eError, "Provided path to the log file is invalid");
-            return;
-        }
-        if (!fs::is_directory(path))
-        {
-            ctx.print(RED, LogType::eError, "Provided path to the log file is not a directory");
-            return;
-        }
-        auto p1 = fs::path(path);
-        if (ctx.m_file)
-        {
-            // Do not reset log file if paths are pointing to the same location
-            auto p2 = fs::path(ctx.m_path);
-            if (p1 != p2)
-            {
-                fflush(ctx.m_file);
-                fclose(ctx.m_file);
-                ctx.m_file = nullptr;
-            }
-        }
-    }
     // Passing nullptr will disable logging to a file
-    ctx.m_path = _path ? (const char*)path.c_str() : "";
-    ctx.m_pathInvalid = false;
+    ctx.m_path = _path ? (const char*)_path : "";
 }
 
 void setLogName(const char* name)
@@ -286,6 +307,94 @@ void setLogMessageDelay(float messageDelayMs)
     ctx.m_messageDelayMs = messageDelayMs;
 }
 
+Result setupLogging()
+{
+    auto& ctx = *Log::s_log;
+    
+    ctx.m_result = kResultOk;
+    ctx.m_pathInvalid = false;
+    
+    // Ensure console is started if requested before we print out any messages 
+    if (ctx.m_console.load() && !ctx.m_consoleActive.load())
+    {
+        ctx.startConsole();
+        ctx.m_consoleActive = ctx.isConsoleActive();
+    }
+
+    // Check if provided name is a valid file name
+    if (ctx.m_name.find_first_of("\\/:*?\"<>|") != std::string::npos)
+    {
+        ctx.print(RED, LogType::eError, "Provided log file name '" + ctx.m_name + "' is invalid\n");
+        ctx.m_result = kResultInvalidParameter;
+        ctx.m_pathInvalid = true;
+    }
+
+    std::u8string path;
+    // Handle long paths for logging as needed on Windows platform
+    if (!ctx.m_path.empty())
+    {
+        if (!nvigi::file::getOSValidPath((const char8_t*)ctx.m_path.c_str(), path))
+        {
+            // In the middle of setting up logging so just try to print to console or callback
+            std::string completeLogMessageLocal = generateHeader(__FILE__, __LINE__, __func__, (int)LogType::eError, nullptr) + "Provided path '" + ctx.m_path + "' is invalid\n";
+            ctx.print(RED, LogType::eError, completeLogMessageLocal);
+            ctx.m_pathInvalid = true;
+            ctx.m_result = kResultInvalidParameter;
+        }
+        else if (!fs::is_directory(path))
+        {
+            std::string completeLogMessageLocal = generateHeader(__FILE__, __LINE__, __func__, (int)LogType::eError, nullptr) + "Provided path '" + ctx.m_path + "' is not a directory\n";
+            ctx.print(RED, LogType::eError, completeLogMessageLocal);
+            ctx.m_pathInvalid = true;
+            ctx.m_result = kResultInvalidParameter;
+        }
+        else
+        {
+            ctx.m_path = (const char*)path.c_str();
+            auto p1 = fs::path(path);
+            if (ctx.m_file)
+            {
+                // Do not reset log file if paths are pointing to the same location
+                auto p2 = fs::path(ctx.m_filePath);
+                if (p1 != p2)
+                {
+                    fflush(ctx.m_file);
+                    fclose(ctx.m_file);
+                    ctx.m_file = nullptr;
+                    ctx.m_filePath.clear();
+                }
+            }
+        }
+    }
+
+    if (!ctx.m_file && !ctx.m_path.empty() && !ctx.m_pathInvalid)
+    {
+        ctx.m_filePath = ctx.m_path;
+        auto path = fs::path(ctx.m_path) / ctx.m_name;
+        auto oldLocale = setlocale(LC_ALL, ".65001"); // utf-8
+        // Allow other process to read log file
+        ctx.m_file = _fsopen(path.string().c_str(), "wt", _SH_DENYWR);
+        setlocale(LC_ALL, oldLocale);
+        if (!ctx.m_file)
+        {
+            ctx.m_pathInvalid = true;
+            ctx.m_filePath.clear();
+            ctx.m_result = kResultInvalidParameter;
+            std::string completeLogMessageLocal = generateHeader(__FILE__, __LINE__, __func__, (int)LogType::eError, nullptr) + "Failed to open log file '" + path.string() + "'\n";
+            ctx.print(RED, LogType::eError, completeLogMessageLocal);
+        }
+        else
+        {
+            std::string completeLogMessageLocal = generateHeader(__FILE__, __LINE__, __func__, (int)LogType::eInfo, nullptr) + "Log file '" + path.string() + "' opened on " + getCurrentDateTime() + "\n";
+            ctx.print(WHITE, LogType::eInfo, completeLogMessageLocal);
+        }
+    }
+
+    //! NOTE: Any additional startup bits that can fail should go here
+
+    return ctx.m_result;
+}
+
 void shutdown()
 {
     auto& ctx = *Log::s_log;
@@ -295,6 +404,7 @@ void shutdown()
         fclose(ctx.m_file);
         ctx.m_file = nullptr;
         ctx.m_pathInvalid = true; // prevent log file reopening
+        ctx.m_filePath.clear();
     }
     ctx.m_consoleActive = false;
 #ifdef NVIGI_WINDOWS
@@ -307,56 +417,10 @@ void shutdown()
 #endif
 }
 
-std::string getCurrentDateTime() {
-    // Get current time as time_point
-    auto now = std::chrono::system_clock::now();
-    auto nowAsTimeT = std::chrono::system_clock::to_time_t(now);
-    auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-
-    // Convert to tm struct
-    std::tm nowTm = *std::localtime(&nowAsTimeT);
-
-    // Format date and time
-    std::ostringstream dateTimeStream;
-    dateTimeStream << std::put_time(&nowTm, "%Y-%m-%d %H:%M:%S");
-    dateTimeStream << '.' << std::setfill('0') << std::setw(3) << nowMs.count();
-
-    return dateTimeStream.str();
-}
-
 void logva(uint32_t level, ConsoleForeground color, const char* _file, int line, const char* _func, int type, const char* tag, const char* _fmt, ...)
 {
     // NOTE: This method must be thread safe but for performance we do NOT use any heavy synchronization
     auto& ctx = Log::s_log;
-
-    auto generateHeader = [](const char* fl, int l, const char* fn, int t, const char* customTag)->std::string
-        {
-            try
-            {
-                // Filename
-                std::string f(fl);
-                // file is constexpr so always valid and always will have at least one '\'
-                f = f.substr(f.rfind('\\') + 1);
-
-                // Log type
-                static std::string prefix[] = { "info","warn","error" };
-                static_assert(countof(prefix) == (size_t)LogType::eCount);
-
-                // Put it all together in the message header
-                std::ostringstream oss;
-                oss << "[" << getCurrentDateTime() << "]" << "[nvigi][" << prefix[t] << "]";
-                if (customTag)
-                {
-                    oss << "[" << customTag << "]";
-                }
-                oss << "[" << f << ":" << l << "]" << "[" << fn << "]";
-                return oss.str();
-            }
-            catch (const std::exception&)
-            {
-                return std::string(customTag);
-            }
-        };
 
     try
     {
@@ -409,35 +473,10 @@ void logva(uint32_t level, ConsoleForeground color, const char* _file, int line,
 
         if (errorDetected)
         {
-            // Something went wrong during `_vscprintf` or `vsprintf_s`
+            // Something went wrong during `_vscprintf` or `vsprintf_s` so get error from system
+            std::string generalLogWarnMessage = generateHeader(__FILE__, __LINE__, __func__, (int)LogType::eWarn, nullptr) + "'vsnprintf' failed while trying to log a message\n";
+            ctx->print(DARKYELLOW, LogType::eWarn, generalLogWarnMessage);
             return;
-        }
-
-        // Atomics
-        if (ctx->m_console.load() && !ctx->m_consoleActive.load())
-        {
-            ctx->startConsole();
-            ctx->m_consoleActive = ctx->isConsoleActive();
-        }
-
-        if (!ctx->m_file && !ctx->m_path.empty() && !ctx->m_pathInvalid)
-        {
-            // Allow other process to read log file
-            auto path = ctx->m_path + "\\" + ctx->m_name;
-            auto oldLocale = setlocale(LC_ALL, ".65001"); // utf-8
-            ctx->m_file = _fsopen(path.c_str(), "wt", _SH_DENYWR);
-            setlocale(LC_ALL, oldLocale);
-            if (!ctx->m_file)
-            {
-                ctx->m_pathInvalid = true;
-                std::string completeLogMessageLocal = generateHeader(__FILE__, __LINE__, __func__, (int)LogType::eError, nullptr) + "Failed to open log file " + path + "\n";
-                ctx->print(RED, LogType::eError, completeLogMessageLocal);
-            }
-            else
-            {
-                std::string completeLogMessageLocal = generateHeader(__FILE__, __LINE__, __func__, (int)LogType::eInfo, nullptr) + "Log file " + path + " opened on " + getCurrentDateTime() + "\n";
-                ctx->print(WHITE, LogType::eInfo, completeLogMessageLocal);
-            }
         }
 
         auto completeLogMessage = generateHeader(_file, line, _func, type, tag) + message;
@@ -474,6 +513,7 @@ ILog* getInterface()
         Log::s_ilog.getLogPath = getLogPath;
         Log::s_ilog.getLogName = getLogName;
         Log::s_ilog.shutdown = shutdown;
+        Log::s_ilog.setupLogging = setupLogging;
     }
     return &Log::s_ilog;
 }

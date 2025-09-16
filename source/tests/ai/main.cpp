@@ -564,6 +564,10 @@ int wmain(int argc, wchar_t** argv)
     // Build a new parser on top of Catch's
     using namespace Catch::clara;
     auto cli = session.cli() 
+        | Opt(nvigi::params.modelDir, "model directory")
+        ["-m"]["--models"]
+        ("where are models located?")
+
         | Opt(nvigi::params.sdkPath, "sdk path")
         ["--sdk"]
         ("path to the nvigi sdk")
@@ -580,6 +584,12 @@ int wmain(int argc, wchar_t** argv)
     if (returnCode != 0) {
         // Command line parsing error
         return returnCode;
+    }
+
+    if (nvigi::params.modelDir.empty())
+    {
+        auto exePath = nvigi::getExecutablePath();
+        nvigi::params.modelDir = exePath + "..\\..\\data\\nvigi.models";
     }
 
     // Run the tests

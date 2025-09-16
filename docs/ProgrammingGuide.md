@@ -3,7 +3,7 @@
 
 This guide primarily focuses on the general use of the In-Game Inferencing, including how to initialize it and utilize its interfaces.
 
-> **IMPORTANT**: This guide might contain pseudo code, for the up to date implementation and source code which can be copy pasted please see the [basic sample](../source/samples/nvigi.basic/basic.cpp)
+> **IMPORTANT**: This guide might contain pseudo code, for the up to date implementation and source code which can be copy pasted please see the SDK Samples
 
 ## Table of Contents
 - [Introduction](#introduction)
@@ -26,17 +26,17 @@ This guide primarily focuses on the general use of the In-Game Inferencing, incl
 
 ## INTRODUCTION
 
-NVIGI functions as a plugin manager that provides `secure plugin loading` and an `explicit` API, giving the host application complete control over every aspect of NVIGI's usage.
+NVIGI functions as a plugin manager that provides **secure plugin loading** and an **explicit** API, giving the host application complete control over every aspect of NVIGI's usage.
 
 ## Key Concepts
 
-* Typed and version structures are used for all data and C-style interfaces. 
+* Typed and versioned structures are used for all data and C-style interfaces. 
     * Structures can be chained together as needed
-    * Structures are ABI and backwards compatible
-    * Structures can contain C-style API (aka interfaces) or just plain data (aka parameters or properties)
+    * Structures are ABI-compatible and backwards-compatible
+    * Structures can contain C-style APIs (aka interfaces/function-pointers) or just plain data (aka parameters or properties)
 * Each plugin implements at least one C-style interface which is provided to the host application and other plugins to use
 * Interfaces are completely custom and it is up to the plugins to decide what functionality is needed in them
-* Different plugins can implement identical interfaces if needed, normally they would use different `backends` to provide same functionality
+* Different plugins can implement identical interfaces if needed, normally they would use different "backends" to provide same functionality
 * Plugins are **developed independently and can be updated independently** (as needed) in any application (even after it has shipped)
   * Each plugin defines the minimum specification required for it to run (minimum driver, OS versions etc.)
 * Plugins have unique identifiers in the following namespace format `nvigi::plugin::$name{::$backend::$api}::kId` where backend and API are optional
@@ -76,7 +76,7 @@ Note that we are chaining common properties to our main properties like this:
     }
 ```
 
-> **IMPORTANT**: Chaining can fail when sharing the same structure across multiple chains which is NOT allowed unless the shared structure is the leaf (at the end in all chains)
+> **IMPORTANT**: Chaining can fail when sharing the same structure across multiple chains which is NOT allowed unless the shared structure is the leaf (at the end in all chains; this is NOT recommended practice)
 
 Now we provide additional information about D3D12 context, assuming the host application is using D3D graphics API:
 ```cpp
@@ -257,7 +257,16 @@ if(NVIGI_FAILED(result, nvigiInit(pref, &info, nvigi::kSDKVersion)))
 }
 ```
 
-Note that **not all plugins need to be enumerated here, later on when requesting interfaces it is possible to provide additional paths to search.**
+Note that **not all plugins need to be enumerated here, later on when requesting interfaces it is possible to provide additional paths to search.** In fact, it is completely valid to initialize IGI without any plugin directories specified:
+```cpp
+pref.numPathsToPlugins = 0;
+pref.utf8PathsToPlugins = nullptr;
+```
+However, in this scenario where no plugin directories are provided, it is **mandatory** to provide `utf8PathToPlugins` when calling `nvigiLoadInterface` (see below for more details).  The main use of explicit plugin directory loading via passing no paths to `nvigiInit` and passing explicit path to `nvigiLoadInterface` is to allow the host application to select different, possibly conflicting plugins much later in the application flow.  Different plugin directories can include different versions of the same plugin if need be.  As noted, the sect of directories passed to `nvigiInit` may not include any pairs/sets of conflicting plugins.  But a later call to `nvigiLoadInterface` can include one of the paths that contains a potentially conflicting plugin.
+
+> Note that providing no plugin directories in init and providing a plugin directory when loading an interface **may not** be faster than providing the plugin directories to `nvigiInit`, as NVIGI will scan all of the plugins in the directory given to `nvigiLoadInterface` to find the plugin that implements the requested interface.  Loading several plugins from the same explicit directory via `nvigi[Get,Load]Interface` can lead to most of the entire directory being scanned multiple times, which can be inefficient.  Delayed plugin directory specification is **not** specifically designed for `nvigiInit` optimization.
+
+> Initial scanning of the shared plugin directory in `nvigiInit` can be optimized by not placing unused plugins in the directory.
 
 > **IMPORTANT**:
 > NVIGI SDK can come in various configurations (debug, release, production etc.) which can contain `different 3rd party dependencies`. To avoid runtime issues it is absolutely essential to use correct set of NVIGI plugins combined with matching set of 3rd party dependencies - do NOT mix debug, release etc.
@@ -408,7 +417,7 @@ if(NVIGI_FAILED(result, nvigi::isPluginExportingInterface(info, nvigi::plugin::$
 Care should be taken when integrating NVIGI into an existing application that is also using a D3D object wrapper like Streamline. The queue/device parameters passed to NVIGI must be the **native** objects, not the app-level wrappers. In the case of Streamline, this means using `slGetNativeInterface` to retrieve the base interface object before passing it to NVIGI.
 
 ### Microsoft Agility SDK
-Please note that D3D12 based plugins require a device which is at least SM 6.6 capable, this feature might not be available on all Windows versions therefore it must be enabled via the Agility SDK. The additional benefit of including the latest Agility SDK is the performance enhancement which comes with the introduction of the new heap type `D3D12_HEAP_TYPE_GPU_UPLOAD`. This new feature enables simultaneous CPU and GPU access to VRAM via the Resizable BAR (ReBAR) mechanism-was introduced to the DirectX 12 API through the Direct3D Agility SDK and corresponding Windows updates. This feature allows for more efficient data transfers, reducing the need for CPU-to-GPU copy operations and potentially improving performance in certain scenarios. For more details please visit https://devblogs.microsoft.com/directx/preview-agility-sdk-1-710-0/
+Please note that D3D12 based plugins require a device which is at least SM 6.6 capable, this feature might not be available on all Windows versions therefore it must be enabled via the Agility SDK. The additional benefit of including the latest Agility SDK is the performance enhancement which comes with the introduction of the new heap type `D3D12_HEAP_TYPE_GPU_UPLOAD`. This new feature enables simultaneous CPU and GPU access to VRAM via the Resizable BAR (ReBAR) mechanism-was introduced to the DirectX 12 API through the Direct3D Agility SDK and corresponding Windows updates. This feature allows for more efficient data transfers, reducing the need for CPU-to-GPU copy operations and potentially improving performance in certain scenarios. For more details please visit the [MS Agility SDK blog](https://devblogs.microsoft.com/directx/preview-agility-sdk-1-710-0/)
 
 | Feature                | First Supported Windows OS                       | First Supported Agility SDK Version   |
 |------------------------|--------------------------------------------------|---------------------------------------|
@@ -544,12 +553,12 @@ $some_path/my_app_dependencies
 
 ### Crash Dumps and Exceptions
 
-If unhandled exception is thrown in a NVIGI module, the crash dump and log file will be saved under `ProgramData\NVIDIA\NVIGI\$EXE_NAME\$ID` by default. 
+If unhandled exception is thrown in a NVIGI module, the crash dump and log file will be saved under `ProgramData/NVIDIA/NVIGI/CrashDumps/$EXE_NAME/$ID` by default. 
 
 Here is an example of the exception file structure:
 
 ```bash
-C:\ProgramData\NVIDIA\NVIGI\nvigi.test\1738350995226850
+C:\\ProgramData\\NVIDIA\\NVIGI\\CrashDumps\\nvigi.test\\1738350995226850
 │
 ├──nvigi-log.txt
 └──nvigi-sha-e46f10d.dmp
@@ -562,7 +571,7 @@ The crash callstack is shown at the end of the log file, providing a detailed tr
 For example:
 
 ```txt
-[2025-01-31 11:16:35.227][nvigi][error][exception.cpp:322][writeMiniDump]Exception detected - thread 72668 - creating mini-dump 'C:\ProgramData/NVIDIA/NVIGI/nvigi.test/1738350995226850/nvigi-sha-e46f10d.dmp'
+[2025-01-31 11:16:35.227][nvigi][error][exception.cpp:322][writeMiniDump]Exception detected - thread 72668 - creating mini-dump 'C:/ProgramData/NVIDIA/NVIGI/CrashDumps/nvigi.test/1738350995226850/nvigi-sha-e46f10d.dmp'
 [2025-01-31 11:16:41.917][nvigi][info][exception.cpp:377][writeMiniDump]Stack trace:
 ntdll:RtlGetCurrentServiceSessionId:7fff4f92c37d
 ntdll:RtlFreeHeap:7fff4f92b001

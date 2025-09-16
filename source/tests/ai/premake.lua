@@ -26,16 +26,18 @@ project "nvigi.test"
 	includedirs {
 		externaldir .."cuda/include", 
 		externaldir .."cuda/extras/CUPTI/include", 
-		externaldir .."cig_scheduler_settings/include"}
+		externaldir .."cig_scheduler_settings/include",
+		externaldir .."vulkanSDK//Include"}
 
 	if os.istarget("windows") then
 		libdirs {
 			externaldir .."cuda//lib/x64", 
 			externaldir .."cuda/extras/CUPTI/lib64",
-			externaldir .."cig_scheduler_settings/lib/Release_x64"}
+			externaldir .."cig_scheduler_settings/lib/Release_x64",
+			externaldir .."vulkanSDK//Lib"}
 
 		filter {"system:windows"}
-			links { "WS2_32.lib", "d3d12.lib", "dxgi.lib", "dxguid.lib", "cuda.lib", "cupti.lib"}
+			links { "WS2_32.lib", "d3d12.lib", "dxgi.lib", "dxguid.lib", "cuda.lib", "cupti.lib", "vulkan-1.lib"}
 			linkoptions{"/STACK:67108864"}
 		filter {}
 	end

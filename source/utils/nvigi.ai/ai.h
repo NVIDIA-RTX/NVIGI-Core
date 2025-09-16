@@ -73,9 +73,17 @@ inline void processGUIDDirectory(const std::string& guid, const std::u8string& _
             auto ext = files.path().extension().string().substr(1);
             if (std::find(extensions.begin(), extensions.end(), ext) != extensions.end())
             {
+                // Adding name to the path can go over the MAX_PATH limit on Windows so we need to handle it correctly
                 auto name = files.path().filename().u8string();
                 std::u8string modelPath = (fs::path(directory) / name).u8string();
-                fileList[ext].push_back(std::string(modelPath.begin(), modelPath.end()));
+                if (file::getOSValidPath(modelPath, modelPath))
+                {
+                    fileList[ext].push_back(std::string(modelPath.begin(), modelPath.end()));
+                }
+                else
+                {
+                    NVIGI_LOG_WARN("Skipping invalid path '%S' for model GUID {%s}", fs::path(modelPath).wstring().c_str(), guid.c_str());
+                }
             }
         }
     }
@@ -203,7 +211,7 @@ inline bool findModels(const CommonCreationParameters* params, const std::vector
     tmp.pop_back();
     while (!tmp.empty())
     {
-        extStr = "," + tmp.back();
+        extStr += "," + tmp.back();
         tmp.pop_back();
     }    
     NVIGI_LOG_INFO("Looking for model(s) in '%S':", fs::path(params->utf8PathToModels).wstring().c_str());

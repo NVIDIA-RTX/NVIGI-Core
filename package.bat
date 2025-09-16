@@ -1,1 +1,1 @@
-.\tools\python\python.exe .\package.py %*
+.\tools\python\python.exe .\tools\packaging\package.py %*

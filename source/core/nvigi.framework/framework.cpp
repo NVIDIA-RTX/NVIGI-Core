@@ -205,18 +205,20 @@ types::string getUTF8PathToDependencies()
 
 //! Check minimum specs for a give plugin
 //! 
-Result checkPluginMinSpec(nvigi::plugin::PluginInfo* info)
+Result checkPluginMinSpec(nvigi::plugin::PluginInfo* info, std::string& message)
 {
+    //! IMPORTANT: All messages here continue the sentence along the lines of "Plugin cannot be used due to ..."
+    //! 
 #ifdef NVIGI_WINDOWS
     if (info->minOS > ctx->caps.osVersion)
     {
-        NVIGI_LOG_ERROR("OS out of date, expected %s detected %s", extra::toStr(info->minOS).c_str(), extra::toStr(ctx->caps.osVersion).c_str());
+        message = extra::format("plugin needs minimum OS version {}, detected {}", extra::toStr(info->minOS), extra::toStr(ctx->caps.osVersion));
         return nvigi::kResultOSOutOfDate;
     }
 #endif
     if (info->pluginAPI > ctx->apiVersion)
     {
-        NVIGI_LOG_ERROR("Framework out of date, version %s plugin %s", extra::toStr(ctx->apiVersion).c_str(), extra::toStr(info->pluginAPI).c_str());
+        message = extra::format("plugin needs minimum framework API version {}, detected {}", extra::toStr(info->pluginAPI), extra::toStr(ctx->apiVersion));
         return nvigi::kResultInvalidState;
     }
     {
@@ -240,14 +242,14 @@ Result checkPluginMinSpec(nvigi::plugin::PluginInfo* info)
         }
         if (!foundAdapter)
         {
-            NVIGI_LOG_WARN("Unable to find adapter supporting plugin, expected vendor 0x%x and GPU architecture %u", info->requiredVendor, info->minGPUArch);
+            message = extra::format("plugin needs adapter vendor {} and GPU architecture >= {}, detected adapters: count {}", vendorIdToString(info->requiredVendor), info->minGPUArch, ctx->caps.adapterCount);
             return nvigi::kResultNoSupportedHardwareFound;
         }
     }
     // Check driver version only if we passed the vendor test above
     if (info->minDriver > ctx->caps.driverVersion)
     {
-        NVIGI_LOG_ERROR("Driver out of date, expected %s detected %s", extra::toStr(info->minDriver).c_str(), extra::toStr(ctx->caps.driverVersion).c_str());
+        message = extra::format("plugin needs minimum driver version {}, detected {}", extra::toStr(info->minDriver), extra::toStr(ctx->caps.driverVersion));
         return nvigi::kResultDriverOutOfDate;
     }
     return kResultOk;
@@ -465,6 +467,7 @@ size_t enumeratePlugins(const char8_t* utf8Directory, bool validateDLLs, const n
                     NVIGI_LOG_VERBOSE("# dependency '%s' found in '%S'", libName.c_str(), libPath.wstring().c_str());
                 }
 #endif
+                std::string msg;
                 //! Prepare info to report back if needed
                 //! 
                 //! NOTE: All dynamic allocations are deallocated on shutdown
@@ -475,7 +478,11 @@ size_t enumeratePlugins(const char8_t* utf8Directory, bool validateDLLs, const n
                 spec.requiredAdapterVendor = info->requiredVendor;
                 spec.requiredAdapterDriverVersion = info->minDriver;
                 spec.requiredAdapterArchitecture = info->minGPUArch;
-                spec.status = checkPluginMinSpec(info);
+                spec.status = checkPluginMinSpec(info, msg);
+                if (spec.status != kResultOk)
+                {
+                    NVIGI_LOG_WARN("[%s] failed min spec check - %s", name.c_str(), msg.c_str());
+                }
                 spec.numSupportedInterfaces = info->interfaces.size();
                 auto supportedInterfaces = new UID[spec.numSupportedInterfaces];
                 for (size_t k = 0; k < spec.numSupportedInterfaces; k++)
@@ -571,8 +578,10 @@ Result registerPlugin(nvigi::PluginID feature)
         }
         //! Check min spec based on plugins' info
         //! 
-        if (NVIGI_FAILED(error, checkPluginMinSpec(info)))
+        std::string msg;
+        if (NVIGI_FAILED(error, checkPluginMinSpec(info, msg)))
         {
+            NVIGI_LOG_WARN("[%s] failed min spec check - %s", name.c_str(), msg.c_str());
             unloadPlugin(hmod, path.wstring().c_str());
             return error;
         }
@@ -623,8 +632,16 @@ nvigi::Result nvigiInitImpl(const nvigi::Preferences& pref, nvigi::PluginAndSyst
     log->enableConsole(pref.showConsole);
     log->setLogLevel(pref.logLevel);
     log->setLogCallback((void*)pref.logMessageCallback);
-    log->setLogName("nvigi-log.txt");
+    // Make log file name in format "nvigi_log_YYYYMMDD_HH:MM:SS.txt"
+    std::ostringstream logFileNameFmt;
+    auto now = std::chrono::system_clock::now();
+    auto time = std::chrono::system_clock::to_time_t(now);
+    std::tm tm = *std::localtime(&time);
+    logFileNameFmt << "nvigi_log_" << std::put_time(&tm, "%Y-%m-%d_%H-%M-%S") << ".txt";
+    auto logFileName = logFileNameFmt.str();
+    log->setLogName(logFileName.c_str());
     log->setLogPath(pref.utf8PathToLogsAndData); // this can fail so set it last in case we need to print to console or report back via callback
+   
 
     std::string buildConfig("production");
 #ifdef NVIGI_DEBUG
@@ -632,6 +649,87 @@ nvigi::Result nvigiInitImpl(const nvigi::Preferences& pref, nvigi::PluginAndSyst
 #elif NVIGI_RELEASE
     buildConfig = "release";
 #endif
+
+    // Override various settings via JSON in non-production builds _before_ we do anything else
+#ifndef NVIGI_PRODUCTION
+    std::vector<std::wstring> jsonLocations = { nvigi::file::getExecutablePath(), nvigi::file::getModulePath(), nvigi::file::getCurrentDirectoryPath() };
+    for (auto& path : jsonLocations)
+    {
+        std::wstring interposerJSONFile = path + L"/nvigi.core.framework.json";
+        if (nvigi::file::exists(interposerJSONFile.c_str()))
+        {
+            auto jsonText = nvigi::file::read(interposerJSONFile.c_str());
+            if (!jsonText.empty()) try
+            {
+                // safety null in case the JSON string is not null-terminated (found by AppVerif)
+                jsonText.push_back(0);
+                std::istringstream stream((const char*)jsonText.data());
+                json config;
+                stream >> config;
+
+                log->enableConsole(nvigi::extra::getJSONValue(config, "showConsole", pref.showConsole));
+                log->setLogLevel(nvigi::extra::getJSONValue(config, "logLevel", pref.logLevel));
+                std::string utf8PathToLogsAndData = pref.utf8PathToLogsAndData ? pref.utf8PathToLogsAndData : "";
+                log->setLogPath(nvigi::extra::getJSONValue(config, "logPath", utf8PathToLogsAndData).c_str());
+                log->setLogName(nvigi::extra::getJSONValue(config, "logName", logFileName).c_str());
+
+                // Setup logging before printing any more messages
+                if (NVIGI_FAILED(res, log->setupLogging()))
+                {
+                    // We already printed an error on console since logging setup failed
+                    return res;
+                }
+
+                NVIGI_LOG_INFO("Overriding settings with parameters from '%S'", interposerJSONFile.c_str());
+
+#ifdef NVIGI_WINDOWS
+                bool waitForDebugger = false;
+                waitForDebugger = nvigi::extra::getJSONValue(config, "waitForDebugger", waitForDebugger);
+                if (waitForDebugger)
+                {
+                    NVIGI_LOG_INFO("Waiting for a debugger to attach ...");
+                    while (!IsDebuggerPresent())
+                    {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    }
+                }
+                std::string miniDumpDirectory;
+                miniDumpDirectory = nvigi::extra::getJSONValue(config, "miniDumpDirectory", miniDumpDirectory);
+                if (!miniDumpDirectory.empty())
+                {
+                    nvigi::exception::getInterface()->setMiniDumpLocation(miniDumpDirectory.c_str());
+                }
+#endif
+                ctx->registerPlugins = nvigi::extra::getJSONValue(config, "registerPlugins", ctx->registerPlugins);
+                ctx->utf8PathToPlugins = nvigi::extra::getJSONValue(config, "pathToPlugins", ctx->utf8PathToPlugins);
+                ctx->utf8PathToDependencies = nvigi::extra::getJSONValue(config, "pathToDependencies", ctx->utf8PathToDependencies);
+
+                // Optional so can be invalid if not provided hence not checking result
+                nvigi::file::getOSValidDirectoryPath(ctx->utf8PathToPlugins.c_str(), ctx->utf8PathToPlugins);
+                nvigi::file::getOSValidDirectoryPath(ctx->utf8PathToDependencies.c_str(), ctx->utf8PathToDependencies);
+
+                validateDLLs = nvigi::extra::getJSONValue(config, "validateDLLs", validateDLLs);
+                std::string forceAdapterStr = nvigi::extra::getJSONValue(config, "forceAdapter", std::string("0")); // "0" == eAny
+                std::string forceArchitectureStr = nvigi::extra::getJSONValue(config, "forceArchitecture", std::string("0"));
+
+                forceAdapterId = (nvigi::VendorId)std::stoi(forceAdapterStr, nullptr, 16);
+                forceArchitecture = std::stoi(forceArchitectureStr, nullptr, 16);
+            }
+            catch (std::exception& e)
+            {
+                NVIGI_LOG_ERROR("'nvigi.core.framework.json' exception %s", e.what());
+            }
+            break;
+        }
+    }
+#endif
+
+    if (NVIGI_FAILED(res, log->setupLogging()))
+    {
+        // We already printed an error on console since logging setup failed
+        return res;
+    }
+
     NVIGI_LOG_INFO("Starting 'nvigi.core.framework':");
     NVIGI_LOG_INFO("# time-stamp: %s", __TIMESTAMP__);
     NVIGI_LOG_INFO("# version: %s [%s]", nvigi::extra::toStr(nvigi::Version(NVIGI_CORESDK_VERSION_MAJOR, NVIGI_CORESDK_VERSION_MINOR, NVIGI_CORESDK_VERSION_PATCH)).c_str(), buildConfig.c_str());
@@ -683,72 +781,6 @@ nvigi::Result nvigiInitImpl(const nvigi::Preferences& pref, nvigi::PluginAndSyst
         }
         // At this point 'ctx->utf8PathToDependencies' is absolute, normalized and "long" if over MAX_PATH on Win11 and it points to a valid directory
     }
-
-    // Override various settings via JSON in non-production builds
-#ifndef NVIGI_PRODUCTION
-    std::vector<std::wstring> jsonLocations = { nvigi::file::getExecutablePath(), nvigi::file::getModulePath(), nvigi::file::getCurrentDirectoryPath() };
-    for (auto& path : jsonLocations)
-    {
-        std::wstring interposerJSONFile = path + L"/nvigi.core.framework.json";
-        if (nvigi::file::exists(interposerJSONFile.c_str()))
-        {
-            auto jsonText = nvigi::file::read(interposerJSONFile.c_str());
-            if (!jsonText.empty()) try
-            {
-                // safety null in case the JSON string is not null-terminated (found by AppVerif)
-                jsonText.push_back(0);
-                std::istringstream stream((const char*)jsonText.data());
-                json config;
-                stream >> config;
-
-                log->enableConsole(nvigi::extra::getJSONValue(config, "showConsole", pref.showConsole));
-                log->setLogLevel(nvigi::extra::getJSONValue(config, "logLevel", pref.logLevel));
-                std::string utf8PathToLogsAndData = pref.utf8PathToLogsAndData ? pref.utf8PathToLogsAndData : "";
-                log->setLogPath(nvigi::extra::getJSONValue(config, "logPath", utf8PathToLogsAndData).c_str());
-
-                NVIGI_LOG_INFO("Overriding settings with parameters from '%S'", interposerJSONFile.c_str());
-
-#ifdef NVIGI_WINDOWS
-                bool waitForDebugger = false;
-                waitForDebugger = nvigi::extra::getJSONValue(config, "waitForDebugger", waitForDebugger);
-                if (waitForDebugger)
-                {
-                    NVIGI_LOG_INFO("Waiting for a debugger to attach ...");
-                    while (!IsDebuggerPresent())
-                    {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    }
-                }
-                std::string miniDumpDirectory;
-                miniDumpDirectory = nvigi::extra::getJSONValue(config, "miniDumpDirectory", miniDumpDirectory);
-                if (!miniDumpDirectory.empty())
-                {
-                    nvigi::exception::getInterface()->setMiniDumpLocation(miniDumpDirectory.c_str());
-                }
-#endif
-                ctx->registerPlugins = nvigi::extra::getJSONValue(config, "registerPlugins", ctx->registerPlugins);
-                ctx->utf8PathToPlugins = nvigi::extra::getJSONValue(config, "pathToPlugins", ctx->utf8PathToPlugins);
-                ctx->utf8PathToDependencies = nvigi::extra::getJSONValue(config, "pathToDependencies", ctx->utf8PathToDependencies);
-
-                // Optional so can be invalid if not provided hence not checking result
-                nvigi::file::getOSValidDirectoryPath(ctx->utf8PathToPlugins.c_str(), ctx->utf8PathToPlugins);
-                nvigi::file::getOSValidDirectoryPath(ctx->utf8PathToDependencies.c_str(), ctx->utf8PathToDependencies);
-
-                validateDLLs = nvigi::extra::getJSONValue(config, "validateDLLs", validateDLLs);
-                std::string forceAdapterStr = nvigi::extra::getJSONValue(config, "forceAdapter", std::string("0")); // "0" == eAny
-                std::string forceArchitectureStr = nvigi::extra::getJSONValue(config, "forceArchitecture", std::string("0"));
-
-                forceAdapterId = (nvigi::VendorId)std::stoi(forceAdapterStr, nullptr, 16);
-                forceArchitecture = std::stoi(forceArchitectureStr, nullptr, 16);
-            }
-            catch (std::exception& e)
-            {
-                NVIGI_LOG_ERROR("'nvigi.core.framework.json' exception %s", e.what());
-            }
-            break;
-        }
-    }
-#endif
 
     // Share internal interface for logging, memory management and exception handling
     addInterface(nvigi::core::framework::kId, log, nvigi::framework::InterfaceFlagNotRefCounted);
@@ -852,8 +884,7 @@ nvigi::Result nvigiInitImpl(const nvigi::Preferences& pref, nvigi::PluginAndSyst
 
     if (ctx->modules.empty())
     {
-        NVIGI_LOG_ERROR("Failed to find any plugins. Please make sure to provide at least one valid path to plugins.");
-        return nvigi::kResultNoPluginsFound;
+        NVIGI_LOG_WARN("Failed to find any plugins during initialization phase. User must provide path to plugin(s) when requesting interface(s)");
     }
 
      //! Check if requested and report back info to the host

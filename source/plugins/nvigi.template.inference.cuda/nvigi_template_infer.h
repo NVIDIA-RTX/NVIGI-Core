@@ -28,7 +28,6 @@ struct alignas(8) TemplateInferCudaCreationParameters
 {
     TemplateInferCudaCreationParameters() { };
     NVIGI_UID(UID({ 0x67a0ecf3, 0x6b52, 0x47f5,{0xb5, 0x93, 0x8e, 0xf8, 0x77, 0x60, 0x12, 0x24} }), kStructVersion1)
-    CommonCreationParameters* common;
 
     //! v1 members go here, please do NOT break the C ABI compatibility:
 

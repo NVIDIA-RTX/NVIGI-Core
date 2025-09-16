@@ -29,6 +29,20 @@ enum class VendorId : uint32_t
     eIntel = 0x8086,
 };
 
+inline const char* vendorIdToString(VendorId id)
+{
+    switch (id)
+    {
+        case VendorId::eAny: return "Any";
+        case VendorId::eNone: return "None";
+        case VendorId::eMS: return "Microsoft";
+        case VendorId::eNVDA: return "NVIDIA";
+        case VendorId::eAMD: return "AMD";
+        case VendorId::eIntel: return "Intel";
+        default: return "Unknown";
+    }
+}
+
 //! Engine types
 //! 
 enum class EngineType : uint32_t

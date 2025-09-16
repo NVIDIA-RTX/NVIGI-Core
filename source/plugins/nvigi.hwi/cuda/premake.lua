@@ -16,16 +16,18 @@ group "plugins/hwi"
 		includedirs {
 			externaldir .."cuda//include", 
 			externaldir .."cig_scheduler_settings//include", 
+			externaldir .."vulkanSDK//Include",
 			"./"
 		}
 
 		libdirs {
 			externaldir .."cuda//lib/x64",
-			externaldir .."cig_scheduler_settings//lib/Release_x64"
+			externaldir .."cig_scheduler_settings//lib/Release_x64",
+			externaldir .."vulkanSDK//Lib"
 		}
 
     filter {"system:windows"}
-		links {"cuda.lib", "cudart.lib"}		
+		links {"cuda.lib", "cudart.lib", "vulkan-1.lib"}		
 	filter {}
 
 	postbuildcommands {

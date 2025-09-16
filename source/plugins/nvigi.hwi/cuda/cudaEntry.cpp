@@ -46,6 +46,7 @@ struct CudaContext
     };
 
     std::map<ID3D12CommandQueue*, CudaContextInfo> contextMap;
+    std::map<VkQueue, CudaContextInfo> contextMapVulkan;
 
     IHWICommon* hwiCommon;
 
@@ -131,6 +132,7 @@ static nvigi::Result cudaReleaseSharedContext(CUcontext cuCtx)
 {
     auto& ctx = (*hwiCuda::getContext());
 
+    // Check D3D12 context map first
     for (auto& [queue, queueInfo] : ctx.contextMap)
     {
         if (queueInfo.ctx == cuCtx)
@@ -146,7 +148,90 @@ static nvigi::Result cudaReleaseSharedContext(CUcontext cuCtx)
         }
     }
 
+    // Check Vulkan context map
+    for (auto& [queue, queueInfo] : ctx.contextMapVulkan)
+    {
+        if (queueInfo.ctx == cuCtx)
+        {
+            queueInfo.refcount--;
+            if (queueInfo.refcount <= 0)
+            {
+                cuCtxDestroy(cuCtx);
+
+                ctx.contextMapVulkan.erase(queue);
+            }
+            return kResultOk;
+        }
+    }
+
     return kResultInvalidParameter;
+}
+
+static nvigi::Result cudaGetSharedContextForVulkanQueue(const nvigi::VulkanParameters& params, CUcontext* cuCtx)
+{
+    auto& ctx = (*hwiCuda::getContext());
+
+    if (cuCtx == nullptr || params.device == nullptr || params.queue == nullptr)
+        return nvigi::kResultInvalidParameter;
+
+    //! IMPORTANT: With CiG sometimes we can fail to create context with a direct (graphics) queue hence we need to try with the async compute one
+    //!
+    //! Logic:
+    //! 
+    //! * Try direct queue first, if all good ignore async
+    //! * If direct fails then async compute queue becomes a mandatory parameter
+    //! * If both queues fail then we have a problem but ideally that should never happen
+    //! 
+    auto createSharedContextVulkan = [&ctx](const VulkanParameters& params, VkQueue* actualQueueUsed) -> nvigi::Result
+        {
+            CUcontext cuCtx{};
+            *actualQueueUsed = params.queue;
+            // Try direct queue first, we checked before that it is valid and provided
+            if (!ctx.contextMapVulkan.contains(params.queue))
+            {
+                // Not cached, create one
+                if (NVIGI_FAILED(res, nvigi::cudaScg::CreateSharedCUDAContextVulkan(params.physicalDevice, params.device, params.queue, cuCtx)))
+                {
+                    // Failed with direct queue, let's try async compute, it becomes a mandatory parameter now
+                    if (!params.queueCompute)
+                    {
+                        NVIGI_LOG_ERROR("Failed to create CUDA shared context with the provided direct (graphics) queue, please provide your asynchronous compute queue in VulkanParameters");
+                        return nvigi::kResultInvalidParameter;
+                    }
+                    *actualQueueUsed = params.queueCompute;
+                    if (!ctx.contextMapVulkan.contains(params.queueCompute))
+                    {
+                        // Not cached, create one
+                        if (NVIGI_FAILED(res, nvigi::cudaScg::CreateSharedCUDAContextVulkan(params.physicalDevice, params.device, params.queueCompute, cuCtx)))
+                        {
+                            return res;
+                        }
+                    }
+                }
+            }
+            // Check if this is the first time we create a context and cache it
+            if (!ctx.contextMapVulkan.contains(*actualQueueUsed))
+            {
+                hwiCuda::CudaContext::CudaContextInfo info;
+                info.ctx = cuCtx;
+                info.refcount = 0;
+                ctx.contextMapVulkan[*actualQueueUsed] = info;
+            }
+            return kResultOk;
+        };
+
+    VkQueue actualQueueUsed = nullptr;
+    if (NVIGI_FAILED(res, createSharedContextVulkan(params, &actualQueueUsed)))
+    {
+        NVIGI_LOG_ERROR("Failed to create shared CUDA context for Vulkan");
+        return res;
+    }
+
+    hwiCuda::CudaContext::CudaContextInfo& ctxInfo = ctx.contextMapVulkan[actualQueueUsed];
+    ctxInfo.refcount++;
+    *cuCtx = ctxInfo.ctx;
+
+    return kResultOk;
 }
 
 static nvigi::Result cudaApplyGlobalGpuInferenceSchedulingMode(CUstream* cudaStreams, size_t cudaStreamsCount)
@@ -198,6 +283,11 @@ namespace hwiCuda
     static nvigi::Result ApplyGlobalGpuInferenceSchedulingMode(CUstream* cudaStreams, size_t cudaStreamsCount)
     {
         NVIGI_CATCH_EXCEPTION(cudaApplyGlobalGpuInferenceSchedulingMode(cudaStreams, cudaStreamsCount));
+    }
+
+    static nvigi::Result GetSharedContextForVulkanQueue(const nvigi::VulkanParameters& params, CUcontext* cuCtx)
+    {
+        NVIGI_CATCH_EXCEPTION(cudaGetSharedContextForVulkanQueue(params, cuCtx));
     }
 } // namespace hwiCuda
 
@@ -254,6 +344,7 @@ Result nvigiPluginRegister(framework::IFramework* framework)
     ctx.api.cudaGetSharedContextForQueue = hwiCuda::GetSharedContextForQueue;
     ctx.api.cudaReleaseSharedContext = hwiCuda::ReleaseSharedContext;
     ctx.api.cudaApplyGlobalGpuInferenceSchedulingMode = hwiCuda::ApplyGlobalGpuInferenceSchedulingMode;
+    ctx.api.cudaGetSharedContextForVulkanQueue = hwiCuda::GetSharedContextForVulkanQueue;
 
     framework->addInterface(plugin::hwi::cuda::kId, &ctx.api, 0);
     

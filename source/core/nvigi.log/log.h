@@ -59,7 +59,7 @@ enum ConsoleForeground
 // {8FFD0CA2-62A0-4F4A-8840-E27E3FF4F75F}
 struct alignas(8) ILog {
     ILog() {}; 
-    NVIGI_UID(UID({ 0x8ffd0ca2, 0x62a0, 0x4f4a,{0x88, 0x40, 0xe2, 0x7e, 0x3f, 0xf4, 0xf7, 0x5f} }), kStructVersion1)
+    NVIGI_UID(UID({ 0x8ffd0ca2, 0x62a0, 0x4f4a,{0x88, 0x40, 0xe2, 0x7e, 0x3f, 0xf4, 0xf7, 0x5f} }), kStructVersion2)
     void (*logva)(uint32_t level, ConsoleForeground color, const char *file, int line, const char *func, int type, const char* tag, const char *fmt,...);
     void (*enableConsole)(bool flag);
     LogLevel(*getLogLevel)();
@@ -71,6 +71,10 @@ struct alignas(8) ILog {
     const char* (*getLogPath)();
     const char* (*getLogName)();
     void (*shutdown)();
+
+    //! v2
+    
+    Result (*setupLogging)();
 
     //! IMPORTANT: New members go here, don't forget to bump the version, see nvigi_struct.h for details
 };

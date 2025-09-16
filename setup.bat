@@ -30,6 +30,7 @@ IF "%cfg%"=="" (
 REM Pull the basic tools we need for the next steps
 call .\tools\packman\packman.cmd pull -p windows-x86_64 .\tools\project.tools.xml
 
+if exist .\scripts\setup_extra.bat call .\scripts\setup_extra.bat %comps:"=%
 if exist project.xml call .\tools\packman\packman.cmd pull -p windows-x86_64 project.xml
 
 echo Creating project files for %cfg%

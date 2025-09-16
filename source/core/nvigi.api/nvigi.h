@@ -85,6 +85,11 @@ struct alignas(8) Preferences {
     //! Optional - Various logging levels
     LogLevel logLevel = LogLevel::eDefault;
     //! Optional - Paths to locations where to look for plugins and their dependencies
+	//! If no paths are provided (i.e. numPathsToPlugins is zero), NVIGI will not be able to pre-scan for
+	//! plugins in Init.  In this case, all calls to any version of Get/Load interface must be passed a valid utf8PathToPlugin
+	//! that includes a plugin implementing the interface.
+    //! As a result, while these paths (and a nonzero numPathsToPlugins) are optional, it is highly recommended to provide them
+    //! except for advanced use cases (e.g. multiple, conflicting plugins)
     //!
     //! NOTE: Duplicated plugins or dependencies are NOT allowed
     const char** utf8PathsToPlugins{};
@@ -152,7 +157,7 @@ NVIGI_API nvigi::Result nvigiShutdown();
 //! @param interfaceType Type of the interface to obtain
 //! @param interfaceVersion Minimal version of the interface to obtain
 //! @param interface Pointer to the interface
-//! @param utf8PathToPlugin Optional path to a new plugin which provides this interface
+//! @param utf8PathToPlugin Optional path to a new plugin which provides this interface; all plugins in this path will be scanned for the interface
 //! @returns nvigi::kResultOk if successful, error code otherwise (see nvigi_result.h for details)
 //!
 //! NOTE: It is recommended to use the template based helpers `nvigiGetInterface` or `nvigiGetInterfaceDynamic` (see below in this header)

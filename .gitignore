@@ -8,6 +8,7 @@ docs/_*/
 /bin/**
 /lib/**
 /symbols/**
+__pycache__
 
 /_core_sdk/
 
@@ -28,6 +29,9 @@ external/*
 
 # Stored credentials for GTL upload
 credentials.txt
+
+/premake.lua
+/project.xml
 
 # Other miscellaneous files (deprecated?)
 docs/pages/*

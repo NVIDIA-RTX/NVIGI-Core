@@ -111,6 +111,12 @@ nvigi::Result tmplCreateInstance(const nvigi::TemplateInferCreationParameters& p
         //! User provided extra parameters!
     }
 
+    auto common = findStruct <nvigi::CommonCreationParameters>(params);
+    if (!common)
+    {
+        NVIGI_LOG_ERROR("CommonCreationParameters must be provided in the chain");
+        return kResultInvalidParameter;
+	}
    
     //! Information about our model(s)
     json modelInfo;
@@ -121,26 +127,26 @@ nvigi::Result tmplCreateInstance(const nvigi::TemplateInferCreationParameters& p
     //! weights from another)    
     //!
     //! Host must provide 'params.common->utf8PathToAdditionalModels'
-    json additionalModelInfo;
+    // json additionalModelInfo;
     //! Find our model(s) - make sure to rename path and extension(s) accordingly
-    if (!ai::findModels(params.common, { "my_ext1", "my_ext2" }, modelInfo, &additionalModelInfo))
+    if (!ai::findModels(common, { "my_ext1", "my_ext2" }, modelInfo)) // , &additionalModelInfo))
     {
         // Failed to find models
         return kResultInvalidParameter;
     }
 
     // Now get our files
-    std::vector<std::string> files1 = modelInfo[params.common->modelGUID]["my_ext1"];
+    std::vector<std::string> files1 = modelInfo[common->modelGUID]["my_ext1"];
     if (files1.empty())
     {
-        NVIGI_LOG_ERROR("Failed to find model in the expected directory '%s'", params.common->utf8PathToModels);
+        NVIGI_LOG_ERROR("Failed to find model in the expected directory '%s'", common->utf8PathToModels);
         return kResultInvalidParameter;
     }
 
-    std::vector<std::string> files2 = modelInfo[params.common->modelGUID]["my_ext2"];
+    std::vector<std::string> files2 = modelInfo[common->modelGUID]["my_ext2"];
     if (files2.empty())
     {
-        NVIGI_LOG_ERROR("Failed to find model in the expected directory '%s'", params.common->utf8PathToModels);
+        NVIGI_LOG_ERROR("Failed to find model in the expected directory '%s'", common->utf8PathToModels);
         return kResultInvalidParameter;
     }
 

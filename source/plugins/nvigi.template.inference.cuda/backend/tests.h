@@ -13,7 +13,7 @@ namespace nvigi
         //! 
         //! This allows easy unit test filtering as described here https://github.com/catchorg/Catch2/blob/devel/docs/command-line.md#specifying-which-tests-to-run
         //! 
-        TEST_CASE("template_inference_cuda_backend", "[tag1],[tag2]")
+        TEST_CASE("template_inference_cuda_backend_on_d3d12", "[tag1],[tag2]")
         {
             // All tests for CUDA plugins must instantiate the CIGCompatibilityChecker
             // to ensure that the plugin will run correctly when run in parallel with 
@@ -38,6 +38,73 @@ namespace nvigi
             REQUIRE(icig != nullptr);
 
             // Get instance(s) from your interface, run tests, check results etc.
+            nvigi::TemplateInferCudaCreationParameters createParams{};
+            nvigi::CommonCreationParameters commonParams{};
+            createParams.chain(commonParams);
+            commonParams.utf8PathToModels = params.modelDir.c_str();
+            commonParams.modelGUID = "{01234567-0123-0123-0123-0123456789AB}";
+
+            nvigi::Result result;
+            nvigi::InferenceInstance* templateInstance{};
+            result = itemplate->createInstance(createParams, &templateInstance);
+            REQUIRE(result == nvigi::kResultOk);
+
+            result = itemplate->destroyInstance(templateInstance);
+            REQUIRE(result == nvigi::kResultOk);
+
+            auto res = params.nvigiUnloadInterface(nvigi::plugin::hwi::cuda::kId, icig);
+            REQUIRE(res == nvigi::kResultOk);
+            res = params.nvigiUnloadInterface(plugin::tmpl_infer_cuda::kId, itemplate);
+            REQUIRE(res == nvigi::kResultOk);
+
+            // CIGCompatibilityChecker::check() must always go last to make sure that 
+            // everything the test did was CIG compatible
+#ifdef NVIGI_WINDOWS
+            if (nvigi::params.useCiG)
+            {
+                REQUIRE(CIGCompatibilityChecker::check());
+            }
+#endif
+        }
+
+        TEST_CASE("template_inference_cuda_backend_on_vulkan", "[tag1],[tag2]")
+        {
+            // All tests for CUDA plugins must instantiate the CIGCompatibilityChecker
+            // to ensure that the plugin will run correctly when run in parallel with 
+            // graphics
+#ifdef NVIGI_WINDOWS
+            VulkanParameters cigParameters;
+            if (nvigi::params.useCiG)
+            {
+                cigParameters = CIGCompatibilityChecker::initVulkan(params.nvigiLoadInterface, params.nvigiUnloadInterface);
+                REQUIRE(cigParameters);
+            }
+#endif
+
+            //! Use global params as needed (see source/tests/ai/main.cpp for details and add modify if required)
+
+            nvigi::ITemplateInferCuda* itemplate{};
+            nvigiGetInterfaceDynamic(plugin::tmpl_infer_cuda::kId, &itemplate, params.nvigiLoadInterface);
+            REQUIRE(itemplate != nullptr);
+
+            nvigi::IHWICuda* icig{};
+            nvigiGetInterfaceDynamic(nvigi::plugin::hwi::cuda::kId, &icig, nvigi::params.nvigiLoadInterface);
+            REQUIRE(icig != nullptr);
+
+            // Get instance(s) from your interface, run tests, check results etc.
+            nvigi::TemplateInferCudaCreationParameters createParams{};
+            nvigi::CommonCreationParameters commonParams{};
+            createParams.chain(commonParams);
+            commonParams.utf8PathToModels = params.modelDir.c_str();
+            commonParams.modelGUID = "{01234567-0123-0123-0123-0123456789AB}";
+
+            nvigi::Result result;
+            nvigi::InferenceInstance* templateInstance{};
+            result = itemplate->createInstance(createParams, &templateInstance);
+            REQUIRE(result == nvigi::kResultOk);
+
+            result = itemplate->destroyInstance(templateInstance);
+            REQUIRE(result == nvigi::kResultOk);
 
             auto res = params.nvigiUnloadInterface(nvigi::plugin::hwi::cuda::kId, icig);
             REQUIRE(res == nvigi::kResultOk);

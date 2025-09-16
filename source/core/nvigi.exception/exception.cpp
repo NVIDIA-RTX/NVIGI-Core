@@ -68,7 +68,11 @@ void deleteOldestDirectoryIfExceeds(const fs::path& target_path, std::size_t max
             fs::remove_all(oldest_directory);
         }
     } catch (const std::filesystem::filesystem_error& e) {
-        NVIGI_LOG_ERROR("Filesystem error: %s", e.what());
+        // Don't log an error if path does not exist, that is OK
+        if (e.code() != std::errc::no_such_file_or_directory)
+        {
+            NVIGI_LOG_ERROR("Filesystem error: %s", e.what());
+        }
     } catch (const std::exception& e) {
         NVIGI_LOG_ERROR("Error: %s", e.what());
     }
@@ -321,36 +325,38 @@ int writeMiniDump(LPEXCEPTION_POINTERS exceptionInfo)
     auto filePath = path + L"/nvigi-sha-" + extra::utf8ToUtf16(GIT_LAST_COMMIT_SHORT) + L".dmp";
     NVIGI_LOG_ERROR("Exception detected - thread %u - creating mini-dump '%S'", GetCurrentThreadId(), filePath.c_str());
 
-     // Try to create file for mini dump.
-    HANDLE FileHandle = CreateFileW(filePath.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    // Try to create file for mini dump.
+    HANDLE fileHandle = CreateFileW(filePath.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
     // Write a mini dump.
-    if (FileHandle)
+    if ((fileHandle != NULL) && (fileHandle != INVALID_HANDLE_VALUE))
     {
-        MINIDUMP_EXCEPTION_INFORMATION DumpExceptionInfo;
+        MINIDUMP_EXCEPTION_INFORMATION mdei;
 
-        DumpExceptionInfo.ThreadId = GetCurrentThreadId();
-        DumpExceptionInfo.ExceptionPointers = exceptionInfo;
-        DumpExceptionInfo.ClientPointers = FALSE;
+        mdei.ThreadId = GetCurrentThreadId();
+        mdei.ExceptionPointers = exceptionInfo;
+        mdei.ClientPointers = FALSE;
 
         // Note: callback setup and dump flags taken from https://www.debuginfo.com/examples/src/effminidumps/MidiDump.cpp
         MINIDUMP_CALLBACK_INFORMATION mci{};
         mci.CallbackRoutine = (MINIDUMP_CALLBACK_ROUTINE)nvigiMiniDumpCallback;
         mci.CallbackParam = 0;
         
-        MINIDUMP_TYPE dumpFlags = MINIDUMP_TYPE(
-            MiniDumpWithPrivateReadWriteMemory |
+        // Note: We do NOT use MiniDumpWithPrivateReadWriteMemory flag since it scans all memory regions for private read/write memory, 
+        // including those managed by security software hence causing dump to fail.
+
+        MINIDUMP_TYPE dumpFlags = MINIDUMP_TYPE( 
             MiniDumpWithDataSegs |
             MiniDumpWithHandleData |
             MiniDumpWithFullMemoryInfo |
             MiniDumpWithThreadInfo |
             MiniDumpWithUnloadedModules);
-        if (!MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), FileHandle, dumpFlags, &DumpExceptionInfo, NULL, &mci))
+        if (!MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), fileHandle, dumpFlags, (exceptionInfo != nullptr) ? &mdei : NULL, NULL, &mci))
         {
-            NVIGI_LOG_ERROR( "Failed to create dump - %s", std::system_category().message(GetLastError()).c_str());
+            NVIGI_LOG_ERROR("Failed to generate mini-dump with flags 0x%X exception info 0x%X file handle 0x%X - '%s'", dumpFlags, exceptionInfo, fileHandle, std::system_category().message(GetLastError()).c_str());
         }
 
-        CloseHandle(FileHandle);
+        CloseHandle(fileHandle);
     }
     else
     {

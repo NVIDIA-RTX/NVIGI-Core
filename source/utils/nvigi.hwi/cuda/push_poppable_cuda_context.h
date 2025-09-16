@@ -9,6 +9,7 @@
 #include "source/core/nvigi.log/log.h"
 #include "source/core/nvigi.api/nvigi_cuda.h"
 #include "source/core/nvigi.api/nvigi_result.h"
+#include "source/core/nvigi.api/nvigi_vulkan.h"
 #include "source/plugins/nvigi.hwi/cuda/nvigi_hwi_cuda.h"
 
 #include <cuda.h>
@@ -61,8 +62,9 @@ namespace nvigi
             auto cudaParams = findStruct<nvigi::CudaParameters>(params);
 #ifdef NVIGI_WINDOWS
             auto d3dParams = findStruct<nvigi::D3D12Parameters>(params);
+            auto vulkanParams = findStruct<nvigi::VulkanParameters>(params);
 
-            if (d3dParams && d3dParams->queue)
+            if ((d3dParams && d3dParams->queue)|| (vulkanParams && vulkanParams->queue))
             {
                 bool ok = framework::getInterface(plugin::getContext()->framework, nvigi::plugin::hwi::cuda::kId, &icig);
                 if (!ok)
@@ -71,18 +73,32 @@ namespace nvigi
                     constructorSucceeded = false;
                     return;
                 }
-                nvigi::Result result = icig->cudaGetSharedContextForQueue(*d3dParams, &cudaCtx);
-                if (result != nvigi::kResultOk)
+
+                if (d3dParams && d3dParams->queue)
                 {
-                    NVIGI_LOG_ERROR("cudaGetSharedContextForQueue failed, return code %d", result);
-                    constructorSucceeded = false;
-                    return;
+                    nvigi::Result result = icig->cudaGetSharedContextForQueue(*d3dParams, &cudaCtx);
+                    if (result != nvigi::kResultOk)
+                    {
+                        NVIGI_LOG_ERROR("cudaGetSharedContextForQueue failed, return code %d", result);
+                        constructorSucceeded = false;
+                        return;
+                    }
+                }
+                else if (vulkanParams && vulkanParams->queue)
+                {
+                    nvigi::Result result = icig->cudaGetSharedContextForVulkanQueue(*vulkanParams, &cudaCtx);
+                    if (result != nvigi::kResultOk)
+                    {
+                        NVIGI_LOG_ERROR("cudaGetSharedContextForVulkanQueue failed, return code %d", result);
+                        constructorSucceeded = false;
+                        return;
+                    }
                 }
 
                 useCudaCtx = true;
                 cudaCtxNeedsRelease = false;
             }
-            else
+            else 
 #endif
             if (cudaParams && cudaParams->context)
             {

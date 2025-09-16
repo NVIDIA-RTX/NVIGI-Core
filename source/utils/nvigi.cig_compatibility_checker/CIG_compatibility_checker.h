@@ -11,6 +11,7 @@
 
 #include "nvigi_cuda.h"
 #include "nvigi_hwi_cuda.h"
+#include <vulkan/vulkan.h>
 
 #define ENABLE_VERBOSE_CIG_LOGGING 0
 
@@ -75,6 +76,7 @@ namespace CIGCompatibilityChecker
     CUcontext gCtxBeforeTest{};
     CUpti_SubscriberHandle gCuptiSubscriber{};
     nvigi::D3D12Parameters gD3dParameters{};
+    nvigi::VulkanParameters gVulkanParameters{};
     CigSchedulerSettingsAPI sched{};
 
 #define checkCuErrors(err)  __checkCuErrors (err, __FILE__, __LINE__)
@@ -141,6 +143,18 @@ namespace CIGCompatibilityChecker
         }
     }
 
+#define checkVkErrors(err)  __checkVkErrors (err, __FILE__, __LINE__)
+    inline void __checkVkErrors(VkResult err, const char* file, const int line)
+    {
+        if (VK_SUCCESS != err)
+        {
+            printf("Vulkan Error = %04d from file <%s>, line %i.\n",
+                err, file, line);
+
+            exit(EXIT_FAILURE);
+        }
+    }
+
     nvigi::D3D12Parameters initCIG(PFun_nvigiLoadInterface* nvigiLoadInterface)
     {
         if (!gD3dParameters.queue)
@@ -183,8 +197,186 @@ namespace CIGCompatibilityChecker
         return gD3dParameters;
     }
 
-    // Call at start of test
-    nvigi::D3D12Parameters init(PFun_nvigiLoadInterface* nvigiLoadInterface, PFun_nvigiUnloadInterface* nvigiUnloadInterface, bool useCIG = true)
+    nvigi::VulkanParameters initVulkanCIG(PFun_nvigiLoadInterface* nvigiLoadInterface)
+    {
+        if (!gVulkanParameters.queue)
+        {
+            // Create Vulkan instance
+            VkApplicationInfo appInfo{};
+            appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+            appInfo.pApplicationName = "CIG Compatibility Checker";
+            appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+            appInfo.pEngineName = "No Engine";
+            appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+            appInfo.apiVersion = VK_API_VERSION_1_0;
+
+            VkInstanceCreateInfo createInfo{};
+            createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+            createInfo.pApplicationInfo = &appInfo;
+            
+            // No validation layers or extensions needed for basic usage
+            createInfo.enabledLayerCount = 0;
+            std::vector<const char*> extensionNames = { VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME };
+            createInfo.ppEnabledExtensionNames = extensionNames.data();
+            createInfo.enabledExtensionCount = static_cast<uint32_t>(extensionNames.size());
+
+            VkResult vkErr = vkCreateInstance(&createInfo, nullptr, &gVulkanParameters.instance);
+            checkVkErrors(vkErr);
+
+            // Enumerate physical devices
+            uint32_t deviceCount = 0;
+            vkErr = vkEnumeratePhysicalDevices(gVulkanParameters.instance, &deviceCount, nullptr);
+            checkVkErrors(vkErr);
+
+            if (deviceCount == 0) 
+            {
+                printf("Vulkan Error: No physical devices found\n");
+                exit(EXIT_FAILURE);
+            }
+
+            std::vector<VkPhysicalDevice> devices(deviceCount);
+            vkErr = vkEnumeratePhysicalDevices(gVulkanParameters.instance, &deviceCount, devices.data());
+            checkVkErrors(vkErr);
+
+            // Select the first device (similar to D3D12 approach)
+            gVulkanParameters.physicalDevice = devices[0];
+
+            // Find queue families
+            uint32_t queueFamilyCount = 0;
+            vkGetPhysicalDeviceQueueFamilyProperties(gVulkanParameters.physicalDevice, &queueFamilyCount, nullptr);
+
+            std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+            vkGetPhysicalDeviceQueueFamilyProperties(gVulkanParameters.physicalDevice, &queueFamilyCount, queueFamilies.data());
+
+            uint32_t graphicsQueueFamily = UINT32_MAX;
+            uint32_t computeQueueFamily = UINT32_MAX;
+            uint32_t transferQueueFamily = UINT32_MAX;
+
+            // Find graphics queue family
+            for (uint32_t i = 0; i < queueFamilyCount; i++) 
+            {
+                if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) 
+                {
+                    graphicsQueueFamily = i;
+                    break;
+                }
+            }
+
+            // Find dedicated compute queue family (preferred) or use graphics queue
+            for (uint32_t i = 0; i < queueFamilyCount; i++) 
+            {
+                if ((queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
+                    !(queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) 
+                {
+                    computeQueueFamily = i;
+                    break;
+                }
+            }
+            if (computeQueueFamily == UINT32_MAX) 
+            {
+                computeQueueFamily = graphicsQueueFamily; // Fallback to graphics queue
+            }
+
+            // Find dedicated transfer queue family (preferred) or use graphics queue
+            for (uint32_t i = 0; i < queueFamilyCount; i++) 
+            {
+                if ((queueFamilies[i].queueFlags & VK_QUEUE_TRANSFER_BIT) &&
+                    !(queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
+                    !(queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT)) 
+                {
+                    transferQueueFamily = i;
+                    break;
+                }
+            }
+            if (transferQueueFamily == UINT32_MAX) 
+            {
+                transferQueueFamily = graphicsQueueFamily; // Fallback to graphics queue
+            }
+
+            // Create device queues
+            std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+            std::unordered_set<uint32_t> uniqueQueueFamilies = {
+                graphicsQueueFamily, computeQueueFamily, transferQueueFamily
+            };
+
+            float queuePriority = 1.0f;
+            for (uint32_t queueFamily : uniqueQueueFamilies) 
+            {
+                VkDeviceQueueCreateInfo queueCreateInfo{};
+                queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+                queueCreateInfo.queueFamilyIndex = queueFamily;
+                queueCreateInfo.queueCount = 1;
+                queueCreateInfo.pQueuePriorities = &queuePriority;
+                queueCreateInfos.push_back(queueCreateInfo);
+            }
+
+            // Create logical device
+            VkPhysicalDeviceFeatures deviceFeatures{};
+            
+            // Check if external compute queue extension is supported
+            uint32_t extensionCount = 0;
+            vkEnumerateDeviceExtensionProperties(gVulkanParameters.physicalDevice, nullptr, &extensionCount, nullptr);
+            
+            std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+            vkEnumerateDeviceExtensionProperties(gVulkanParameters.physicalDevice, nullptr, &extensionCount, availableExtensions.data());
+            
+            std::vector<const char*> deviceExtensions;
+            bool externalComputeQueueSupported = false;
+            
+            for (const auto& extension : availableExtensions) {
+                if (strcmp(extension.extensionName, "VK_NV_external_compute_queue") == 0) {
+                    externalComputeQueueSupported = true;
+                    deviceExtensions.push_back("VK_NV_external_compute_queue");
+                    printf("CIG: Enabled VK_NV_external_compute_queue extension\n");
+                    break;
+                }
+            }
+            
+            if (!externalComputeQueueSupported) {
+                printf("CIG Warning: VK_NV_external_compute_queue extension not supported by this device\n");
+            }
+            
+            // Setup VkExternalComputeQueueDeviceCreateInfoNV if the extension is supported
+            VkExternalComputeQueueDeviceCreateInfoNV externalComputeQueueCreateInfo{};
+            if (externalComputeQueueSupported) {
+                externalComputeQueueCreateInfo.sType = VK_STRUCTURE_TYPE_EXTERNAL_COMPUTE_QUEUE_DEVICE_CREATE_INFO_NV;
+                externalComputeQueueCreateInfo.pNext = nullptr;
+                externalComputeQueueCreateInfo.reservedExternalQueues = 1; // We only need one external queue
+                printf("CIG: Configured for %d reserved external compute queues\n", externalComputeQueueCreateInfo.reservedExternalQueues);
+            }
+            
+            VkDeviceCreateInfo deviceCreateInfo{};
+            deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+            deviceCreateInfo.pNext = externalComputeQueueSupported ? &externalComputeQueueCreateInfo : nullptr;
+            deviceCreateInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+            deviceCreateInfo.pQueueCreateInfos = queueCreateInfos.data();
+            deviceCreateInfo.pEnabledFeatures = &deviceFeatures;
+            deviceCreateInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+            deviceCreateInfo.ppEnabledExtensionNames = deviceExtensions.empty() ? nullptr : deviceExtensions.data();
+            deviceCreateInfo.enabledLayerCount = 0;
+
+            vkErr = vkCreateDevice(gVulkanParameters.physicalDevice, &deviceCreateInfo, nullptr, &gVulkanParameters.device);
+            checkVkErrors(vkErr);
+
+            // Get Vulkan external compute queue properties
+            VkPhysicalDeviceExternalComputeQueuePropertiesNV externalComputeProperties = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_COMPUTE_QUEUE_PROPERTIES_NV };
+            VkPhysicalDeviceProperties2 physDevProps = { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
+            physDevProps.pNext = &externalComputeProperties;
+            vkGetPhysicalDeviceProperties2(gVulkanParameters.physicalDevice, &physDevProps);
+
+            printf("CIG: externalDataSize %d\n", externalComputeProperties.externalDataSize);
+            printf("CIG: maxExternalQueues %d\n", externalComputeProperties.maxExternalQueues);
+
+            // Get queue handles
+            vkGetDeviceQueue(gVulkanParameters.device, graphicsQueueFamily, 0, &gVulkanParameters.queue);
+            vkGetDeviceQueue(gVulkanParameters.device, computeQueueFamily, 0, &gVulkanParameters.queueCompute);
+            vkGetDeviceQueue(gVulkanParameters.device, transferQueueFamily, 0, &gVulkanParameters.queueTransfer);
+        }
+        return gVulkanParameters;
+    }
+
+    // Common pre-initialization setup
+    void initPre()
     {
         CUresult cuerr = cuInit(0);
         checkCuErrors(cuerr);
@@ -226,6 +418,54 @@ namespace CIGCompatibilityChecker
             NVIGI_LOG_WARN_ONCE("Skipping CUPTI due to errors, most likely running on new HW")
         }
 #endif
+    }
+
+    // Common post-initialization setup
+    void initPost(CUcontext cigContext)
+    {
+        HMODULE dll = LoadLibraryA("cig_scheduler_settings.dll");
+        if (!dll)
+        {
+            printf("Error loading cig_scheduler_settings.dll\n");
+            exit(EXIT_FAILURE);
+        }
+
+        sched.StreamSetWorkloadType = (PFun_StreamSetWorkloadType*)GetProcAddress(dll, "StreamSetWorkloadType");
+        sched.ContextSetDefaultWorkloadType = (PFun_ContextSetDefaultWorkloadType*)GetProcAddress(dll, "ContextSetDefaultWorkloadType");
+        sched.StreamGetWorkloadType = (PFun_StreamGetWorkloadType*)GetProcAddress(dll, "StreamGetWorkloadType");
+        sched.ContextGetDefaultWorkloadType = (PFun_ContextGetDefaultWorkloadType*)GetProcAddress(dll, "ContextGetDefaultWorkloadType");
+        sched.WorkloadTypeGetName = (PFun_WorkloadTypeGetName*)GetProcAddress(dll, "WorkloadTypeGetName");
+
+        if (cigContext)
+        {
+            CUresult cuerr = cuCtxSetCurrent(cigContext);
+            checkCuErrors(cuerr);
+
+            size_t availableSharedMemory = 0;
+            int reservedSharedMemory = 0;
+
+            size_t cig{};
+            cuerr = cuCtxGetLimit(&cig, CU_LIMIT_CIG_ENABLED);
+            checkCuErrors(cuerr);
+            cuerr = cuCtxGetLimit(&availableSharedMemory, CU_LIMIT_SHMEM_SIZE);
+            checkCuErrors(cuerr);
+            cuDeviceGetAttribute(&reservedSharedMemory, CU_DEVICE_ATTRIBUTE_RESERVED_SHARED_MEMORY_PER_BLOCK, 0);
+            checkCuErrors(cuerr);
+            gCheckerState.maxSharedMemBytesForCig = (uint32_t)availableSharedMemory - reservedSharedMemory;
+
+            NVIGI_LOG_INFO_ONCE("CIG Info: max shared memory bytes for CIG = %d (CTX is %s)\n", gCheckerState.maxSharedMemBytesForCig,
+                cig ? "SUPPORTED" : "NOT SUPPORTED");
+
+            cuerr = cuCtxSetCurrent(gCtxBeforeTest);
+            checkCuErrors(cuerr);
+        }
+    }
+
+    // Call at start of test - initializes D3D
+    nvigi::D3D12Parameters init(PFun_nvigiLoadInterface* nvigiLoadInterface, PFun_nvigiUnloadInterface* nvigiUnloadInterface, bool useCIG = true)
+    {
+        initPre();
+
         nvigi::D3D12Parameters cigParameters;
         CUcontext cigContext;
         if (useCIG)
@@ -248,44 +488,38 @@ namespace CIGCompatibilityChecker
             cigContext = gCtxBeforeTest;
         }
 
+        initPost(cigContext);
+        return cigParameters;
+    }
 
-        HMODULE dll = LoadLibraryA("cig_scheduler_settings.dll");
-        if (!dll)
+    // Call at start of test - initializes Vulkan
+    nvigi::VulkanParameters initVulkan(PFun_nvigiLoadInterface* nvigiLoadInterface, PFun_nvigiUnloadInterface* nvigiUnloadInterface, bool useCIG = true)
+    {
+        initPre();
+
+        nvigi::VulkanParameters cigParameters;
+        CUcontext cigContext;
+        if (useCIG)
         {
-            printf("Error loading cig_scheduler_settings.dll\n");
-            exit(EXIT_FAILURE);
+            cigParameters = initVulkanCIG(nvigiLoadInterface);
+
+            // To get the max amount of shared memory supported by CIG we need to 
+            // create a CIG context. Note that we don't pass this context to the
+            // plugins under test, because we want to test the plugin's own
+            // call to create the CIG context
+            nvigi::IHWICuda* icig = nullptr;
+            bool success = nvigiGetInterfaceDynamic(nvigi::plugin::hwi::cuda::kId, &icig, nvigiLoadInterface);
+            nvigi::Result igierr = icig->cudaGetSharedContextForVulkanQueue(cigParameters, &cigContext);
+            checkAimErrors(igierr);
+
+            nvigiUnloadInterface(nvigi::plugin::hwi::cuda::kId, icig);
+        }
+        else
+        {
+            cigContext = gCtxBeforeTest;
         }
 
-        sched.StreamSetWorkloadType = (PFun_StreamSetWorkloadType*)GetProcAddress(dll, "StreamSetWorkloadType");
-        sched.ContextSetDefaultWorkloadType = (PFun_ContextSetDefaultWorkloadType*)GetProcAddress(dll, "ContextSetDefaultWorkloadType");
-        sched.StreamGetWorkloadType = (PFun_StreamGetWorkloadType*)GetProcAddress(dll, "StreamGetWorkloadType");
-        sched.ContextGetDefaultWorkloadType = (PFun_ContextGetDefaultWorkloadType*)GetProcAddress(dll, "ContextGetDefaultWorkloadType");
-        sched.WorkloadTypeGetName = (PFun_WorkloadTypeGetName*)GetProcAddress(dll, "WorkloadTypeGetName");
-
-        if (cigContext)
-        {
-            cuerr = cuCtxSetCurrent(cigContext);
-            checkCuErrors(cuerr);
-
-            size_t availableSharedMemory = 0;
-            int reservedSharedMemory = 0;
-
-            size_t cig{};
-            cuerr = cuCtxGetLimit(&cig, CU_LIMIT_CIG_ENABLED);
-            checkCuErrors(cuerr);
-            cuerr = cuCtxGetLimit(&availableSharedMemory, CU_LIMIT_SHMEM_SIZE);
-            checkCuErrors(cuerr);
-            cuDeviceGetAttribute(&reservedSharedMemory, CU_DEVICE_ATTRIBUTE_RESERVED_SHARED_MEMORY_PER_BLOCK, 0);
-            checkCuErrors(cuerr);
-            gCheckerState.maxSharedMemBytesForCig = (uint32_t)availableSharedMemory - reservedSharedMemory;
-
-            NVIGI_LOG_INFO_ONCE("CIG Info: max shared memory bytes for CIG = %d (CTX is %s)\n", gCheckerState.maxSharedMemBytesForCig,
-                cig ? "SUPPORTED" : "NOT SUPPORTED");
-
-            cuerr = cuCtxSetCurrent(gCtxBeforeTest);
-            checkCuErrors(cuerr);
-        }
-
+        initPost(cigContext);
         return cigParameters;
     }
 
@@ -710,9 +944,14 @@ namespace CIGCompatibilityChecker
         }
     }
 #else
-    nvigi::D3D12Parameters init(PFun_nvigiLoadInterface*, PFun_nvigiUnloadInterface*)
+    nvigi::D3D12Parameters init(PFun_nvigiLoadInterface*, PFun_nvigiUnloadInterface*, bool = true)
     {
         return nvigi::D3D12Parameters{};
+    }
+
+    nvigi::VulkanParameters initVulkan(PFun_nvigiLoadInterface*, PFun_nvigiUnloadInterface*, bool = true)
+    {
+        return nvigi::VulkanParameters{};
     }
 
     void resetLaunchCounters() {}
