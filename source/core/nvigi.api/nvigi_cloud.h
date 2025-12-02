@@ -30,10 +30,13 @@ NVIGI_VALIDATE_STRUCT(RPCParameters)
 //! {AA88BBA7-2217-4569-9C95-0A6EA6BE189C}
 struct alignas(8) RESTParameters {
     RESTParameters() {}; 
-    NVIGI_UID(UID({ 0xaa88bba7, 0x2217, 0x4569,{ 0x9c, 0x95, 0xa, 0x6e, 0xa6, 0xbe, 0x18, 0x9c } }), kStructVersion1)
+    NVIGI_UID(UID({ 0xaa88bba7, 0x2217, 0x4569,{ 0x9c, 0x95, 0xa, 0x6e, 0xa6, 0xbe, 0x18, 0x9c } }), kStructVersion2)
     const char* url{};
     const char* authenticationToken{};
-    bool verboseMode{};
+    bool verboseMode{}; // if true, log detailed information about the request/response
+
+    //! v2
+    bool useStreaming{}; // if true, instruct REST protocol to operate in streaming mode if supported by the server
 
     //! NEW MEMBERS GO HERE, REMEMBER TO BUMP THE VERSION!
 };

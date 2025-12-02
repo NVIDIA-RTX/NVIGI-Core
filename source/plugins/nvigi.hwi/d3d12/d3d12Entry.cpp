@@ -265,6 +265,7 @@ Result nvigiPluginRegister(framework::IFramework* framework)
     }
     else
     {
+        NVIGI_LOG_ERROR("Failed to load cig_scheduler_settings.dll");
         return kResultMissingDynamicLibraryDependency;
     }
 

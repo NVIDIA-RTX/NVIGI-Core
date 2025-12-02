@@ -426,7 +426,8 @@ size_t enumeratePlugins(const char8_t* utf8Directory, bool validateDLLs, const n
             nvigi::plugin::PluginInfo* info{};
             if (NVIGI_FAILED(error, getInfo(&nvigi::framework::ctx->framework, &info)))
             {
-                NVIGI_LOG_ERROR("'getInfo' failed for plugin %s - error 0x%x", name.c_str(), error);
+                NVIGI_LOG_ERROR("'getInfo' failed for plugin %s - error: %s (0x%x) - %s", 
+                    name.c_str(), nvigi::resultToString(error), error, nvigi::resultToExplanation(error));
                 spec.status = error;
                 continue;
             }
@@ -481,7 +482,9 @@ size_t enumeratePlugins(const char8_t* utf8Directory, bool validateDLLs, const n
                 spec.status = checkPluginMinSpec(info, msg);
                 if (spec.status != kResultOk)
                 {
-                    NVIGI_LOG_WARN("[%s] failed min spec check - %s", name.c_str(), msg.c_str());
+                    NVIGI_LOG_WARN("[%s] failed min spec check - Error: %s - %s - Details: %s", 
+                        name.c_str(), nvigi::resultToString(spec.status), 
+                        nvigi::resultToExplanation(spec.status), msg.c_str());
                 }
                 spec.numSupportedInterfaces = info->interfaces.size();
                 auto supportedInterfaces = new UID[spec.numSupportedInterfaces];
@@ -505,6 +508,9 @@ Result registerPlugin(nvigi::PluginID feature)
 {
     if (ctx->modules.find(feature) == ctx->modules.end())
     {
+        NVIGI_LOG_ERROR("Cannot register plugin - feature not found. Error: %s - %s", 
+            nvigi::resultToString(nvigi::kResultMissingInterface), 
+            nvigi::resultToExplanation(nvigi::kResultMissingInterface));
         return nvigi::kResultMissingInterface;
     }
     auto& [path, internals] = ctx->modules[feature];
@@ -573,7 +579,8 @@ Result registerPlugin(nvigi::PluginID feature)
         nvigi::plugin::PluginInfo* info{};
         if (NVIGI_FAILED(error, getInfo(&nvigi::framework::ctx->framework, &info)))
         {
-            NVIGI_LOG_ERROR("'getInfo' failed for plugin %S - error 0x%x", path.wstring().c_str(), error);
+            NVIGI_LOG_ERROR("'getInfo' failed for plugin %S - error: %s (0x%x) - %s", 
+                path.wstring().c_str(), nvigi::resultToString(error), error, nvigi::resultToExplanation(error));
             return nvigi::kResultInvalidState;
         }
         //! Check min spec based on plugins' info
@@ -581,7 +588,9 @@ Result registerPlugin(nvigi::PluginID feature)
         std::string msg;
         if (NVIGI_FAILED(error, checkPluginMinSpec(info, msg)))
         {
-            NVIGI_LOG_WARN("[%s] failed min spec check - %s", name.c_str(), msg.c_str());
+            NVIGI_LOG_WARN("[%s] failed min spec check - Error: %s - %s - Details: %s", 
+                name.c_str(), nvigi::resultToString(error), 
+                nvigi::resultToExplanation(error), msg.c_str());
             unloadPlugin(hmod, path.wstring().c_str());
             return error;
         }
@@ -590,7 +599,8 @@ Result registerPlugin(nvigi::PluginID feature)
         if (NVIGI_FAILED(error, pluginRegister(&ctx->framework)))
         {
             unloadPlugin(hmod, path.wstring().c_str());
-            NVIGI_LOG_ERROR("Failed to register plugin '%S' - error 0x%x", path.wstring().c_str(), error);
+            NVIGI_LOG_ERROR("Failed to register plugin '%S' - error: %s (0x%x) - %s", 
+                path.wstring().c_str(), nvigi::resultToString(error), error, nvigi::resultToExplanation(error));
             return nvigi::kResultInvalidState;
         }
         if (currentInterfaceCount >= ctx->framework.getNumInterfaces(feature))
@@ -617,7 +627,13 @@ using namespace nvigi::framework;
 //! 
 nvigi::Result nvigiInitImpl(const nvigi::Preferences& pref, nvigi::PluginAndSystemInformation** pluginInfo, uint64_t sdkVersion)
 {
-    if (ctx) return nvigi::kResultInvalidState;
+    if (ctx)
+    {
+        NVIGI_LOG_ERROR("Framework already initialized. Error: %s - %s", 
+            nvigi::resultToString(nvigi::kResultInvalidState), 
+            nvigi::resultToExplanation(nvigi::kResultInvalidState));
+        return nvigi::kResultInvalidState;
+    }
 
     ctx = new FrameworkContext;
 
@@ -928,7 +944,13 @@ nvigi::Result nvigiInitImpl(const nvigi::Preferences& pref, nvigi::PluginAndSyst
 
 nvigi::Result nvigiShutdownImpl()
 {
-    if (!ctx) return nvigi::kResultInvalidState;
+    if (!ctx)
+    {
+        NVIGI_LOG_ERROR("Framework not initialized. Error: %s - %s", 
+            nvigi::resultToString(nvigi::kResultInvalidState), 
+            nvigi::resultToExplanation(nvigi::kResultInvalidState));
+        return nvigi::kResultInvalidState;
+    }
 
 #ifdef NVIGI_WINDOWS
     //! If process is running with elevated privileges we downgrade them for security reasons
@@ -994,8 +1016,20 @@ nvigi::Result nvigiShutdownImpl()
 
 nvigi::Result nvigiLoadInterfaceImpl(nvigi::PluginID feature, const nvigi::UID& type, uint32_t /*version*/, void** _interface, const char* utf8PathToPlugin)
 {
-    if (!_interface) return nvigi::kResultInvalidParameter;
-    if (!ctx) return nvigi::kResultInvalidState;
+    if (!_interface)
+    {
+        NVIGI_LOG_ERROR("Interface pointer is null. Error: %s - %s", 
+            nvigi::resultToString(nvigi::kResultInvalidParameter), 
+            nvigi::resultToExplanation(nvigi::kResultInvalidParameter));
+        return nvigi::kResultInvalidParameter;
+    }
+    if (!ctx)
+    {
+        NVIGI_LOG_ERROR("Framework not initialized. Error: %s - %s", 
+            nvigi::resultToString(nvigi::kResultInvalidState), 
+            nvigi::resultToExplanation(nvigi::kResultInvalidState));
+        return nvigi::kResultInvalidState;
+    }
 
 #ifdef NVIGI_WINDOWS
     //! If process is running with elevated privileges we downgrade them for security reasons
@@ -1058,12 +1092,26 @@ nvigi::Result nvigiLoadInterfaceImpl(nvigi::PluginID feature, const nvigi::UID& 
         }
     }
 
-    return *_interface ? nvigi::kResultOk : nvigi::kResultMissingInterface;
+    if (!*_interface)
+    {
+        NVIGI_LOG_ERROR("Interface {%s} not found for feature. Error: %s - %s", 
+            nvigi::extra::guidToString(type).c_str(),
+            nvigi::resultToString(nvigi::kResultMissingInterface), 
+            nvigi::resultToExplanation(nvigi::kResultMissingInterface));
+        return nvigi::kResultMissingInterface;
+    }
+    return nvigi::kResultOk;
 }
 
 nvigi::Result nvigiUnloadInterfaceImpl(nvigi::PluginID feature, const nvigi::UID& type)
 {
-    if (!ctx) return nvigi::kResultInvalidState;
+    if (!ctx)
+    {
+        NVIGI_LOG_ERROR("Framework not initialized. Error: %s - %s", 
+            nvigi::resultToString(nvigi::kResultInvalidState), 
+            nvigi::resultToExplanation(nvigi::kResultInvalidState));
+        return nvigi::kResultInvalidState;
+    }
 
 #ifdef NVIGI_WINDOWS
     //! If process is running with elevated privileges we downgrade them for security reasons
@@ -1111,6 +1159,9 @@ nvigi::Result nvigiUnloadInterfaceImpl(nvigi::PluginID feature, const nvigi::UID
     {
         if (ctx->modules.find(feature) == ctx->modules.end())
         {
+            NVIGI_LOG_ERROR("Cannot unload plugin - feature not found. Error: %s - %s", 
+                nvigi::resultToString(nvigi::kResultMissingInterface), 
+                nvigi::resultToExplanation(nvigi::kResultMissingInterface));
             return nvigi::kResultMissingInterface;
         }
         auto& [path, internals] = ctx->modules[feature];

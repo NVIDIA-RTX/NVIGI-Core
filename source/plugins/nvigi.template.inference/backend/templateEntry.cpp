@@ -87,6 +87,12 @@ nvigi::Result tmplEvaluate(nvigi::InferenceExecutionContext* execCtx)
     return kResultOk;
 }
 
+nvigi::Result tmplCancelAsyncEvaluation(nvigi::InferenceExecutionContext* /*execCtx*/)
+{
+    // This template plugin does not implement async evaluation cancellation
+    return kResultNoImplementation;
+}
+
 //! Making sure our implementation is covered with our exception handler
 //! 
 namespace tmpl_infer
@@ -94,6 +100,11 @@ namespace tmpl_infer
 nvigi::Result evaluate(nvigi::InferenceExecutionContext* execCtx)
 {
     NVIGI_CATCH_EXCEPTION(tmplEvaluate(execCtx));
+}
+
+nvigi::Result cancelAsyncEvaluation(nvigi::InferenceExecutionContext* execCtx)
+{
+    NVIGI_CATCH_EXCEPTION(tmplCancelAsyncEvaluation(execCtx));
 }
 } // namespace tmpl
 
@@ -167,6 +178,7 @@ nvigi::Result tmplCreateInstance(const nvigi::TemplateInferCreationParameters& p
     //instance->getInputSignature = tmpl_infer::getInputSignature;
     //instance->getOutputSignature = tmpl_infer::getOutputSignature;
     instance->evaluate = tmpl_infer::evaluate;
+    instance->cancelAsyncEvaluation = tmpl_infer::cancelAsyncEvaluation;
 
     *_instance = instance;
 

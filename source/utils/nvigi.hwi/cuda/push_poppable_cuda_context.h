@@ -18,6 +18,8 @@
 #include <mutex>
 #include <assert.h>
 
+#define CUDA_CTX_DEBUG 0
+
 namespace nvigi
 {
 
@@ -110,6 +112,7 @@ namespace nvigi
             {
                 CUcontext currentCudaContext{};
 
+                // TODO: Take multi GPU into account when deciding what warning to display here
                 NVIGI_LOG_WARN(
                     "createInstance was called without specifying either a D3D command queue, a "
                     "Vulkan device or a CUDA context. For games, and other applications that use "
@@ -129,18 +132,27 @@ namespace nvigi
                     return;
                 }
 
-                // The user hasn't given us any information about where to run, so just run 
-                // on the primary context of CUDA device 0. If they want to run somewhere 
-                // else then they can either pass us a CUDA context, or a D3D device/queue.
-                CUdevice cuDeviceZero{};
-                cuerr = cuDeviceGet(&cuDeviceZero, 0);
+                int cuDeviceOrdinal;
+                if (cudaParams && cudaParams->device)
+                {
+                    // User provided a CudaParameters struct, use the device from that
+                    cuDeviceOrdinal = cudaParams->device;
+                }
+                else
+                {
+                    // User didn't provide a CudaParameters struct, use default CUDA device
+                    cuDeviceOrdinal = 0;
+                }
+
+                CUdevice cuDevice{};
+                cuerr = cuDeviceGet(&cuDevice, cuDeviceOrdinal);
                 if (cuerr != CUDA_SUCCESS)
                 {
                     NVIGI_LOG_ERROR("cuDeviceGet failed, return code %d", cuerr);
                     constructorSucceeded = false;
                     return;
                 }
-                cuerr = cuDevicePrimaryCtxRetain(&currentCudaContext, cuDeviceZero);
+                cuerr = cuDevicePrimaryCtxRetain(&currentCudaContext, cuDevice);
                 if (cuerr != CUDA_SUCCESS)
                 {
                     NVIGI_LOG_ERROR("cuDevicePrimaryCtxRetain failed, return code %d", cuerr);
@@ -241,9 +253,19 @@ namespace nvigi
                     assert(false && "Pushing CUDA context when it is already active");
                     return;
                 }
-                else if (CUDA_SUCCESS != cuCtxPushCurrent(cudaCtx))
+                
+#if CUDA_CTX_DEBUG                
+                // Log the current context before pushing
+                CUcontext currentCtx = nullptr;
+                cuCtxGetCurrent(&currentCtx);
+                NVIGI_LOG_INFO("[CUDA_CTX_DEBUG] PUSH: thread_id=0x%llx, about to push context=%p, current_context_before_push=%p", 
+                               (unsigned long long)std::hash<std::thread::id>{}(std::this_thread::get_id()),
+                               cudaCtx, currentCtx);
+#endif                
+                CUresult pushResult = cuCtxPushCurrent(cudaCtx);
+                if (CUDA_SUCCESS != pushResult)
                 {
-                    NVIGI_LOG_ERROR("Pushing CUDA context failed");
+                    NVIGI_LOG_ERROR("Pushing CUDA context failed, error code: %d", pushResult);
                     assert(false && "Pushing CUDA context failed");
                     return;
                 }
@@ -252,6 +274,10 @@ namespace nvigi
                     const std::lock_guard<std::mutex> lock(threadsThatHavePushedMutex);
                     threadsThatHavePushed.insert(std::this_thread::get_id());
                 }
+#if CUDA_CTX_DEBUG                 
+                NVIGI_LOG_INFO("[CUDA_CTX_DEBUG] PUSH: succeeded, context=%p is now active on thread 0x%llx", 
+                               cudaCtx, (unsigned long long)std::hash<std::thread::id>{}(std::this_thread::get_id()));
+#endif                               
             }
         }
         void popRuntimeContext()
@@ -272,14 +298,51 @@ namespace nvigi
                     assert(false && "Popping CUDA context when it was not active");
                     return;
                 }
-                else if (CUDA_SUCCESS != cuCtxPopCurrent(&oldCtx))
+                
+#if CUDA_CTX_DEBUG                 
+                // Log the current context before popping
+                CUcontext currentCtx = nullptr;
+                cuCtxGetCurrent(&currentCtx);
+                NVIGI_LOG_INFO("[CUDA_CTX_DEBUG] POP: thread_id=0x%llx, expected_context=%p, current_context_before_pop=%p", 
+                               (unsigned long long)std::hash<std::thread::id>{}(std::this_thread::get_id()),
+                               cudaCtx, currentCtx);
+#endif
+
+                CUresult popResult = cuCtxPopCurrent(&oldCtx);
+                if (CUDA_SUCCESS != popResult)
                 {
-                    NVIGI_LOG_ERROR("Popping CUDA context failed");
+                    NVIGI_LOG_ERROR("Popping CUDA context failed, error code: %d", popResult);
                     assert(false && "Popping CUDA context failed");
                     return;
                 }
+                
+#if CUDA_CTX_DEBUG                   
+                // Get the context that's now current after the pop
+                CUcontext newCurrentCtx = nullptr;
+                cuCtxGetCurrent(&newCurrentCtx);
+#endif                
                 if (oldCtx != cudaCtx)
                 {
+#if CUDA_CTX_DEBUG                      
+                    NVIGI_LOG_ERROR("[CUDA_CTX_DEBUG] CONTEXT MISMATCH DETECTED!");
+                    NVIGI_LOG_ERROR("  Thread ID:                    0x%llx", 
+                                    (unsigned long long)std::hash<std::thread::id>{}(std::this_thread::get_id()));
+                    NVIGI_LOG_ERROR("  Expected context to pop:      %p", cudaCtx);
+                    NVIGI_LOG_ERROR("  Context before pop:           %p", currentCtx);
+                    NVIGI_LOG_ERROR("  Context actually popped:      %p", oldCtx);
+                    NVIGI_LOG_ERROR("  Context now current after pop:%p", newCurrentCtx);
+                    NVIGI_LOG_ERROR("  Using CiG:                    %s", usingCiG ? "YES" : "NO");
+                    
+                    // Log all threads that have pushed
+                    {
+                        const std::lock_guard<std::mutex> lock(threadsThatHavePushedMutex);
+                        NVIGI_LOG_ERROR("  Threads with active push: %zu", threadsThatHavePushed.size());
+                        for (const auto& tid : threadsThatHavePushed)
+                        {
+                            NVIGI_LOG_ERROR("    - Thread 0x%llx", (unsigned long long)std::hash<std::thread::id>{}(tid));
+                        }
+                    }
+#endif                    
                     NVIGI_LOG_ERROR("Popping the wrong CUDA context");
                     assert(false && "Popping the wrong CUDA context");
                     return;
@@ -289,6 +352,10 @@ namespace nvigi
                     const std::lock_guard<std::mutex> lock(threadsThatHavePushedMutex);
                     threadsThatHavePushed.erase(std::this_thread::get_id());
                 }
+#if CUDA_CTX_DEBUG                 
+                NVIGI_LOG_INFO("[CUDA_CTX_DEBUG] POP: succeeded, popped context=%p, now current=%p on thread 0x%llx", 
+                               oldCtx, newCurrentCtx, (unsigned long long)std::hash<std::thread::id>{}(std::this_thread::get_id()));
+#endif                               
             }
         }
     };

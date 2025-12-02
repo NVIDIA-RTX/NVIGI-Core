@@ -6,11 +6,14 @@
 
 #include <mutex>
 #include <functional>
+#include <chrono>
 
 #include "source/core/nvigi.thread/thread.h"
 
 namespace nvigi::poll
 {
+
+constexpr uint32_t kDefaultTimeoutMs = 5000;
 
 template<typename T>
 struct PollContext
@@ -18,22 +21,25 @@ struct PollContext
     void signalResultPending()
     {
         std::unique_lock lck(resultPendingMutex);
-        resultPending.store(true);
+        resultPending = true;
         resultPendingCV.notify_one();
     }
 
     void signalResultConsumed()
     {
         std::unique_lock lck(resultPendingMutex);
-        resultPending.store(false);
+        resultPending = false;
         resultPendingCV.notify_one();
     }
 
-    void waitResultPending()
+    Result waitResultPending(uint32_t timeoutMs = kDefaultTimeoutMs)
     {
         std::unique_lock lck(resultPendingMutex);
-        while (!resultPending)
-            resultPendingCV.wait(lck);
+        if (!resultPendingCV.wait_for(lck, std::chrono::milliseconds(timeoutMs), [this]() { return resultPending; }))
+        {
+            return nvigi::kResultTimedOut;
+        }
+        return nvigi::kResultOk;
     }
 
     bool checkResultPending()
@@ -42,60 +48,24 @@ struct PollContext
         return resultPending;
     }
 
-    void waitResultConsumed()
-    {
-        std::unique_lock lck(resultPendingMutex);
-        while (resultPending)
-            resultPendingCV.wait(lck);
-    }
-
     T triggerCallback(T state)
     {
         resultPendingStatus.store(state);
         signalResultPending();
-        waitResultConsumed();
+        // Wait indefinitely for host to consume results (no timeout)
+        std::unique_lock lck(resultPendingMutex);
+        resultPendingCV.wait(lck, [this]() { return !resultPending; });
         return resultPendingStatus.load();
     }
 
-    void schedule(std::function<void(void)> func)
-    {
-        worker->scheduleWork(func);
-    }
-
-    void init(const wchar_t* name, int priority)
-    {
-        if (!worker)
-        {
-            worker = new thread::WorkerThread(name, priority);
-        }
-    }
-
-    void shutdown()
-    {
-        if (worker)
-        {
-            worker->flush();
-            delete worker;
-            worker = nullptr;
-        }
-    }
     
-    bool isInitialized() const
-    {
-        return worker != nullptr;
-    }
-
-    bool flush()
-    {
-        if (!worker) return false;
-        return worker->flush() == std::cv_status::no_timeout;
-    }
-
-    Result getResults(bool wait, T* state)
+    Result getResults(bool wait, T* state, uint32_t timeoutMs = kDefaultTimeoutMs)
     {
         if (wait)
         {
-            waitResultPending();
+            Result result = waitResultPending(timeoutMs);
+            if (result != nvigi::kResultOk)
+                return result;
         }
         else
         {
@@ -114,10 +84,9 @@ struct PollContext
         return kResultOk;
     }
 
-    thread::WorkerThread* worker{};
     std::mutex resultPendingMutex;
     std::condition_variable resultPendingCV{};
-    std::atomic<bool> resultPending = false;
+    bool resultPending = false;
     std::atomic<T> resultPendingStatus{};
 };
 

@@ -62,6 +62,9 @@ In order to schedule graphics and compute efficiently, NVIGI needs to know the D
 
     nvigi::ASRWhisperCreationParameters asrParams{};
     asrParams.language = "en";
+    asrParams.common = &common;
+    asrParams.common->numThreads = myNumCPUThreads;
+    asrParams.common->vramBudgetMB = myVRAMBudget;
     <etc>
     
     D3D12Parameters d3d12Parameters{};

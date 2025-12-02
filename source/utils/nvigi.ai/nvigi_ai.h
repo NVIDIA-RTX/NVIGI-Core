@@ -308,7 +308,7 @@ using InferenceInstanceData = void;
 struct alignas(8) InferenceInstance {
     //! Allow existing code to downgrade version as needed if not planning to implement V2+
     InferenceInstance(uint32_t version = kStructVersion2) { _base.version = version; };
-    NVIGI_UID(UID({ 0xad9dc29c, 0xa89, 0x4a4e,{ 0xb9, 0x0, 0xa7, 0x18, 0x3b, 0x48, 0x33, 0x6e } }), kStructVersion2)
+    NVIGI_UID(UID({ 0xad9dc29c, 0xa89, 0x4a4e,{ 0xb9, 0x0, 0xa7, 0x18, 0x3b, 0x48, 0x33, 0x6e } }), kStructVersion3)
 
     //! Instance data, must be passed as input to all functions below
     InferenceInstanceData* data{};
@@ -348,6 +348,20 @@ struct alignas(8) InferenceInstance {
     //! 
     //! This method is NOT thread safe.
     nvigi::Result(*evaluateAsync)(nvigi::InferenceExecutionContext* execCtx){};
+
+    //! V3
+
+    // Request to cancel running evaluation
+    //!
+    //! This method should be called only after calling evaluateAsync with a null callback ptr.
+    //!
+    //! @param execCtx The execution context passed to evaluateAsync
+    //! @return nvigi::kResultOk if successful, error code otherwise (see NVIGI_result.h for details)
+    //! 
+    //! NOTE: This method can be left as nullptr or return nvigi::ResultNoImplementation if the plugin does not support cancellation.
+    //!
+    //! This method is NOT thread safe.
+    nvigi::Result(*cancelAsyncEvaluation)(nvigi::InferenceExecutionContext* execCtx){};
 
     //! NEW MEMBERS GO HERE, BUMP THE VERSION IN NVIGI_UID AND CONSTRUCTOR!
 };

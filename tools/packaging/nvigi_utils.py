@@ -4,6 +4,16 @@ from pathlib import Path
 import shutil
 import stat
 
+def DeleteDirTree(dir):
+    # Remove the directory and all its contents
+    if os.path.exists(dir):
+        # we see some read-only files, so we need to fix those before we can delete
+        for dirpath, dirnames, filenames in os.walk(dir):
+            os.chmod( dirpath, stat.S_IWRITE )
+            for filename in filenames:
+                os.chmod(os.path.join(dirpath, filename), stat.S_IWRITE)
+        shutil.rmtree(dir)
+
 # copy_list is a list of (source, dest) tuples
 def CopyFileList(copy_list):
     total = len(copy_list)

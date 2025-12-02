@@ -25,6 +25,7 @@ This guide primarily focuses on the general use of the AI plugins performing loc
 - [Obtaining Results](#obtaining-results)
   - [Callback Approach](#callback-approach)
   - [Polling Approach](#polling-approach)
+  - [Canceling Asynchronous Evaluation](#canceling-asynchronous-evaluation)
   
 ## INTRODUCTION
 
@@ -627,3 +628,70 @@ while (state == nvigi::InferenceExecutionStateDataPending)
 ```
 
 > NOTE: Even with polling we still ultimately use the callback function to process output slots in the execution context, simply for convenience
+
+### Canceling Asynchronous Evaluation
+
+> IMPORTANT: This API is only available for plugins that implement version 3 or higher of the `InferenceInstance` interface. Not all plugins may support cancellation, in which case the API will return `nvigi::ResultNoImplementation`.
+
+When using asynchronous evaluation with polling (i.e., `evaluateAsync` with a null callback), you can explicitly cancel an in-progress inference operation by calling the `cancelAsyncEvaluation` method. This is particularly useful when you need to abort a long-running inference task due to user input or application requirements.
+
+Here's how to use `cancelAsyncEvaluation`:
+
+```cpp
+// Start async evaluation with polling (no callback)
+nvigi::InferenceExecutionContext asrContext{};
+asrContext.instance = asrInstanceLocal;
+asrContext.callback = nullptr;          // NO CALLBACK - using polling mode
+asrContext.callbackUserData = nullptr;
+asrContext.inputs = &inputs;
+
+// Start async evaluation
+if(NVIGI_FAILED(res, asrContext.instance->evaluateAsync(&asrContext)))
+{
+    LOG("NVIGI call failed, code %d", res);
+}
+
+// ... Later, if you need to cancel the operation ...
+
+// Check if the plugin supports cancellation
+if (asrContext.instance->cancelAsyncEvaluation != nullptr)
+{
+    // Request cancellation of the async evaluation
+    nvigi::Result cancelResult = asrContext.instance->cancelAsyncEvaluation(&asrContext);
+    
+    if (cancelResult == nvigi::kResultOk)
+    {
+        // Cancellation request successful
+        // Continue polling to receive the final state
+        nvigi::InferenceExecutionState state;
+        while (state != nvigi::InferenceExecutionStateDone)
+        {
+            if (ipolled->getResults(&asrContext, true, &state) == nvigi::kResultOk)
+            {
+                // Process any remaining results
+                if (state == nvigi::InferenceExecutionStateCancel)
+                {
+                    LOG("Inference was successfully canceled");
+                }
+                ipolled->releaseResults(&asrContext, state);
+            }
+        }
+    }
+    else if (cancelResult == nvigi::kResultNoImplementation)
+    {
+        LOG("Plugin does not support cancellation");
+    }
+}
+```
+
+**Key Points:**
+
+* `cancelAsyncEvaluation` should only be called after `evaluateAsync` has been invoked with a null callback pointer
+* The method can be `nullptr` or return `nvigi::ResultNoImplementation` if the plugin doesn't support cancellation
+* After calling `cancelAsyncEvaluation`, you should continue polling with `getResults` to properly clean up the evaluation context
+* The final state received will be `InferenceExecutionStateCancel` when cancellation is successful
+* This method is NOT thread safe and should be called from the same thread that manages the evaluation context
+
+**Alternative: Canceling via Callback**
+
+When using the callback approach (instead of polling), inference can be canceled by returning `InferenceExecutionStateCancel` from the callback function itself, as shown in the earlier callback examples. The `cancelAsyncEvaluation` API is specifically designed for the polling workflow where no callback is provided.

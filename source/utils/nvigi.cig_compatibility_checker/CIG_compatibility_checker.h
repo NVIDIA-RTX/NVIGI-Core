@@ -5,6 +5,7 @@
 
 #include <cupti.h>
 #include <unordered_set>
+#include <unordered_map>
 #ifdef NVIGI_WINDOWS
 #include <cig_scheduler_settings.h>
 #endif
@@ -213,7 +214,7 @@ namespace CIGCompatibilityChecker
             VkInstanceCreateInfo createInfo{};
             createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
             createInfo.pApplicationInfo = &appInfo;
-            
+
             // No validation layers or extensions needed for basic usage
             createInfo.enabledLayerCount = 0;
             std::vector<const char*> extensionNames = { VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME };
@@ -228,7 +229,7 @@ namespace CIGCompatibilityChecker
             vkErr = vkEnumeratePhysicalDevices(gVulkanParameters.instance, &deviceCount, nullptr);
             checkVkErrors(vkErr);
 
-            if (deviceCount == 0) 
+            if (deviceCount == 0)
             {
                 printf("Vulkan Error: No physical devices found\n");
                 exit(EXIT_FAILURE);
@@ -253,9 +254,9 @@ namespace CIGCompatibilityChecker
             uint32_t transferQueueFamily = UINT32_MAX;
 
             // Find graphics queue family
-            for (uint32_t i = 0; i < queueFamilyCount; i++) 
+            for (uint32_t i = 0; i < queueFamilyCount; i++)
             {
-                if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) 
+                if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
                 {
                     graphicsQueueFamily = i;
                     break;
@@ -263,32 +264,32 @@ namespace CIGCompatibilityChecker
             }
 
             // Find dedicated compute queue family (preferred) or use graphics queue
-            for (uint32_t i = 0; i < queueFamilyCount; i++) 
+            for (uint32_t i = 0; i < queueFamilyCount; i++)
             {
                 if ((queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
-                    !(queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) 
+                    !(queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT))
                 {
                     computeQueueFamily = i;
                     break;
                 }
             }
-            if (computeQueueFamily == UINT32_MAX) 
+            if (computeQueueFamily == UINT32_MAX)
             {
                 computeQueueFamily = graphicsQueueFamily; // Fallback to graphics queue
             }
 
             // Find dedicated transfer queue family (preferred) or use graphics queue
-            for (uint32_t i = 0; i < queueFamilyCount; i++) 
+            for (uint32_t i = 0; i < queueFamilyCount; i++)
             {
                 if ((queueFamilies[i].queueFlags & VK_QUEUE_TRANSFER_BIT) &&
                     !(queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
-                    !(queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT)) 
+                    !(queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT))
                 {
                     transferQueueFamily = i;
                     break;
                 }
             }
-            if (transferQueueFamily == UINT32_MAX) 
+            if (transferQueueFamily == UINT32_MAX)
             {
                 transferQueueFamily = graphicsQueueFamily; // Fallback to graphics queue
             }
@@ -300,7 +301,7 @@ namespace CIGCompatibilityChecker
             };
 
             float queuePriority = 1.0f;
-            for (uint32_t queueFamily : uniqueQueueFamilies) 
+            for (uint32_t queueFamily : uniqueQueueFamilies)
             {
                 VkDeviceQueueCreateInfo queueCreateInfo{};
                 queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -312,17 +313,17 @@ namespace CIGCompatibilityChecker
 
             // Create logical device
             VkPhysicalDeviceFeatures deviceFeatures{};
-            
+
             // Check if external compute queue extension is supported
             uint32_t extensionCount = 0;
             vkEnumerateDeviceExtensionProperties(gVulkanParameters.physicalDevice, nullptr, &extensionCount, nullptr);
-            
+
             std::vector<VkExtensionProperties> availableExtensions(extensionCount);
             vkEnumerateDeviceExtensionProperties(gVulkanParameters.physicalDevice, nullptr, &extensionCount, availableExtensions.data());
-            
+
             std::vector<const char*> deviceExtensions;
             bool externalComputeQueueSupported = false;
-            
+
             for (const auto& extension : availableExtensions) {
                 if (strcmp(extension.extensionName, "VK_NV_external_compute_queue") == 0) {
                     externalComputeQueueSupported = true;
@@ -331,11 +332,11 @@ namespace CIGCompatibilityChecker
                     break;
                 }
             }
-            
+
             if (!externalComputeQueueSupported) {
                 printf("CIG Warning: VK_NV_external_compute_queue extension not supported by this device\n");
             }
-            
+
             // Setup VkExternalComputeQueueDeviceCreateInfoNV if the extension is supported
             VkExternalComputeQueueDeviceCreateInfoNV externalComputeQueueCreateInfo{};
             if (externalComputeQueueSupported) {
@@ -344,7 +345,7 @@ namespace CIGCompatibilityChecker
                 externalComputeQueueCreateInfo.reservedExternalQueues = 1; // We only need one external queue
                 printf("CIG: Configured for %d reserved external compute queues\n", externalComputeQueueCreateInfo.reservedExternalQueues);
             }
-            
+
             VkDeviceCreateInfo deviceCreateInfo{};
             deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
             deviceCreateInfo.pNext = externalComputeQueueSupported ? &externalComputeQueueCreateInfo : nullptr;
@@ -524,7 +525,7 @@ namespace CIGCompatibilityChecker
     }
 
     // Call at end of test
-    bool check(bool useCIG = true)
+    bool check(bool useCIG = true, int ordinalOfRequestedCudaDevice=-1)
     {
 #ifdef NVIGI_DISABLE_CUPTI
         return true;
@@ -552,12 +553,69 @@ namespace CIGCompatibilityChecker
         printf("\n");
 #endif
 
+        // Make mapping from device to ordinal for pretty display
+        std::unordered_map<CUdevice, int> deviceToOrdinal;
+        int deviceCount;
+        CUresult err = cuDeviceGetCount(&deviceCount);
+        checkCuErrors(err);
+        for (int i = 0; i != deviceCount; i++)
+        {
+            CUdevice device;
+            cuDeviceGet(&device, i);
+            deviceToOrdinal[device] = i;
+        }
+
+        // Struct to hold device information
+        struct DeviceInfo {
+            int ordinal;
+            char name[256];
+        };
+
+        // Lambda to get device info from a context
+        auto getDeviceInfoFromContext = [&deviceToOrdinal](CUcontext context) -> DeviceInfo {
+            DeviceInfo info;
+            info.ordinal = -1;
+            info.name[0] = '\0';
+
+            // Save the current context so we can restore it after querying
+            CUcontext savedContext;
+            CUresult err = cuCtxGetCurrent(&savedContext);
+            checkCuErrors(err);
+            
+            // Switch to the context we want to query
+            err = cuCtxSetCurrent(context);
+            checkCuErrors(err);
+            
+            CUdevice device;
+            err = cuCtxGetDevice(&device);
+            checkCuErrors(err);
+            
+            auto iter = deviceToOrdinal.find(device);
+            if (iter != deviceToOrdinal.end())
+            {
+                info.ordinal = iter->second;
+            }
+
+            err = cuDeviceGetName(info.name, sizeof(info.name), device);
+            checkCuErrors(err);
+            
+            // Restore the original context
+            err = cuCtxSetCurrent(savedContext);
+            checkCuErrors(err);
+
+            return info;
+        };
+
+        bool runningOnRequestedDevice = true;
+
         if (gCheckerState.cigContextsUsed.size() != 0)
         {
             printf("CIG Info: CIG contexts used: ");
             for (CUcontext context : gCheckerState.cigContextsUsed)
             {
-                printf("%p ", context);
+                DeviceInfo info = getDeviceInfoFromContext(context);
+                if (ordinalOfRequestedCudaDevice != -1 && info.ordinal != ordinalOfRequestedCudaDevice) runningOnRequestedDevice = false;
+                printf("%p (device %d: %s) ", context, info.ordinal, info.name);
             }
             printf("\n");
         }
@@ -567,9 +625,16 @@ namespace CIGCompatibilityChecker
             printf("CIG Compatibility Error: the following non-CIG contexts were used: ");
             for (CUcontext context : gCheckerState.nonCigContextsUsed)
             {
-                printf("%p ", context);
+                DeviceInfo info = getDeviceInfoFromContext(context);
+                if (ordinalOfRequestedCudaDevice != -1 && info.ordinal != ordinalOfRequestedCudaDevice) runningOnRequestedDevice = false;
+                printf("%p (device %d: %s) ", context, info.ordinal, info.name);
             }
             printf("\n");
+        }
+
+        if (!runningOnRequestedDevice && ordinalOfRequestedCudaDevice != -1)
+        {
+            printf("Multi-GPU Compatibility Error: CUDA work was run on a device other than requested device %d\n", ordinalOfRequestedCudaDevice);
         }
 
         if (gCheckerState.launchesOfTypeIsValid)
@@ -877,7 +942,7 @@ namespace CIGCompatibilityChecker
                     }
                 }
             }
-            else if(pCallbackData->callbackSite == CUPTI_API_EXIT)
+            else if (pCallbackData->callbackSite == CUPTI_API_EXIT)
             {
                 if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuCtxCreate ||
                     callbackId == CUPTI_DRIVER_TRACE_CBID_cuCtxCreate_v2 ||
@@ -916,10 +981,115 @@ namespace CIGCompatibilityChecker
                     printf("CIG Info: cuInit: new context = %p\n", pCallbackData->context);
 #endif
                 }
+                else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuCtxSetCurrent) // 322
+                {
+#if ENABLE_VERBOSE_CIG_LOGGING
+                    cuCtxSetCurrent_params* params = (cuCtxSetCurrent_params*)pCallbackData->functionParams;
+                    printf("CIG Info: cuCtxSetCurrent: context=%p (context after call=%p)\n",
+                        params->ctx, pCallbackData->context);
+#endif
+                }
+                else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuDevicePrimaryCtxRetain) // 330
+                {
+#if ENABLE_VERBOSE_CIG_LOGGING
+                    cuDevicePrimaryCtxRetain_params* params = (cuDevicePrimaryCtxRetain_params*)pCallbackData->functionParams;
+                    printf("CIG Info: cuDevicePrimaryCtxRetain: device=%d, returned context=%p (context after call=%p)\n",
+                        params->dev, *params->pctx, pCallbackData->context);
+#endif
+                }
+                else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuMemAlloc_v2) // 219
+                {
+#if ENABLE_VERBOSE_CIG_LOGGING
+                    cuMemAlloc_v2_params* params = (cuMemAlloc_v2_params*)pCallbackData->functionParams;
+                    printf("CIG Info: cuMemAlloc_v2: size=%zu, returned dptr=%zu, context=%p\n",
+                        params->bytesize, *params->dptr, pCallbackData->context);
+#endif
+                }
+                else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuMemAllocPitch_v2) // 220
+                {
+#if ENABLE_VERBOSE_CIG_LOGGING
+                    cuMemAllocPitch_v2_params* params = (cuMemAllocPitch_v2_params*)pCallbackData->functionParams;
+                    printf("CIG Info: cuMemAllocPitch_v2: width=%zu, height=%zu, returned dptr=%zu, pitch=%zu, context=%p\n",
+                        params->WidthInBytes, params->Height, *params->dptr, *params->pPitch, pCallbackData->context);
+#endif
+                }
+                else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuMemAllocManaged) // 396
+                {
+#if ENABLE_VERBOSE_CIG_LOGGING
+                    cuMemAllocManaged_params* params = (cuMemAllocManaged_params*)pCallbackData->functionParams;
+                    printf("CIG Info: cuMemAllocManaged: size=%zu, flags=%u, returned dptr=%zu, context=%p\n",
+                        params->bytesize, params->flags, *params->dptr, pCallbackData->context);
+#endif
+                }
+                else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuMemAllocAsync) // 682
+                {
+#if ENABLE_VERBOSE_CIG_LOGGING
+                    cuMemAllocAsync_params* params = (cuMemAllocAsync_params*)pCallbackData->functionParams;
+                    printf("CIG Info: cuMemAllocAsync: size=%zu, stream=%p, returned dptr=%zu, context=%p\n",
+                        params->bytesize, params->hStream, *params->dptr, pCallbackData->context);
+#endif
+                }
+                else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuMemAllocAsync_ptsz) // 683
+                {
+#if ENABLE_VERBOSE_CIG_LOGGING
+                    cuMemAllocAsync_ptsz_params* params = (cuMemAllocAsync_ptsz_params*)pCallbackData->functionParams;
+                    printf("CIG Info: cuMemAllocAsync_ptsz: size=%zu, stream=%p, returned dptr=%zu, context=%p\n",
+                        params->bytesize, params->hStream, *params->dptr, pCallbackData->context);
+#endif
+                }
+                else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuMemFree_v2) // 221
+                {
+#if ENABLE_VERBOSE_CIG_LOGGING
+                    cuMemFree_v2_params* params = (cuMemFree_v2_params*)pCallbackData->functionParams;
+                    printf("CIG Info: cuMemFree_v2: dptr=%zu, context=%p\n",
+                        params->dptr, pCallbackData->context);
+#endif
+                }
+                else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuMemFreeAsync) // 684
+                {
+#if ENABLE_VERBOSE_CIG_LOGGING
+                    cuMemFreeAsync_params* params = (cuMemFreeAsync_params*)pCallbackData->functionParams;
+                    printf("CIG Info: cuMemFreeAsync: dptr=%zu, stream=%p, context=%p\n",
+                        params->dptr, params->hStream, pCallbackData->context);
+#endif
+                }
+                else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuMemFreeAsync_ptsz) // 685
+                {
+#if ENABLE_VERBOSE_CIG_LOGGING
+                    cuMemFreeAsync_ptsz_params* params = (cuMemFreeAsync_ptsz_params*)pCallbackData->functionParams;
+                    printf("CIG Info: cuMemFreeAsync_ptsz: dptr=%zu, stream=%p, context=%p\n",
+                        params->dptr, params->hStream, pCallbackData->context);
+#endif
+                }
+                else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuArrayCreate_v2) // 218
+                {
+#if ENABLE_VERBOSE_CIG_LOGGING
+                    cuArrayCreate_v2_params* params = (cuArrayCreate_v2_params*)pCallbackData->functionParams;
+                    printf("CIG Info: cuArrayCreate_v2: returned array=%p, context=%p\n",
+                        *params->pHandle, pCallbackData->context);
+#endif
+                }
+                else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuArray3DCreate_v2) // 233
+                {
+#if ENABLE_VERBOSE_CIG_LOGGING
+                    cuArray3DCreate_v2_params* params = (cuArray3DCreate_v2_params*)pCallbackData->functionParams;
+                    printf("CIG Info: cuArray3DCreate_v2: returned array=%p, context=%p\n",
+                        *params->pHandle, pCallbackData->context);
+#endif
+                }
+                else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuMipmappedArrayCreate) // 234
+                {
+#if ENABLE_VERBOSE_CIG_LOGGING
+                    cuMipmappedArrayCreate_params* params = (cuMipmappedArrayCreate_params*)pCallbackData->functionParams;
+                    printf("CIG Info: cuMipmappedArrayCreate: returned array=%p, context=%p\n",
+                        *params->pHandle, pCallbackData->context);
+#endif
+                }
                 else
                 {
 #if ENABLE_VERBOSE_CIG_LOGGING
-                    const std::lock_guard<std::mutex> lock(pCheckerState->mutex);
+                    // Note: Don't lock mutex here as this callback may be triggered while check() holds the mutex
+                    // (e.g., from cuDeviceGet, cuCtxGetDevice, etc. called inside check())
                     pCheckerState->unhandledCudaApiFunctionIds.insert(callbackId);
 #endif
                 }
@@ -957,6 +1127,6 @@ namespace CIGCompatibilityChecker
     void resetLaunchCounters() {}
 
     // Call at end of test
-    bool check() { return true; }
+    bool check(bool = true) { return true; }
 #endif
 };

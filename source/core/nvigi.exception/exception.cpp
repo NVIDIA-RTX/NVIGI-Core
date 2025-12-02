@@ -296,7 +296,7 @@ int writeMiniDump(LPEXCEPTION_POINTERS exceptionInfo)
         if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_ProgramData, 0, NULL, &programDataPath)))
         {
             // Root directory for our executable
-            path = programDataPath + std::wstring(L"/NVIDIA/NVIGI/") + file::getExecutableName();
+            path = programDataPath + std::wstring(L"/NVIDIA/NVIGI/CrashDumps/") + file::getExecutableName();
             // Allow up to kMaxAllowedDumps dumps per executable by deleting the oldest one (function is a NOP otherwise)
             fs::path processRoot(path);
             deleteOldestDirectoryIfExceeds(processRoot, kMaxAllowedDumps);
@@ -376,8 +376,8 @@ int writeMiniDump(LPEXCEPTION_POINTERS exceptionInfo)
     std::string stackTrace;
     if (!dumpStackTrace(exceptionInfo, stackTrace))
     {
-        // Not our exception, ignore
-        return EXCEPTION_CONTINUE_EXECUTION;
+        // Not our exception, ignore and continue searching
+        return EXCEPTION_CONTINUE_SEARCH;
     }
 
     NVIGI_LOG_INFO("Stack trace:\n%s", stackTrace.c_str());
@@ -394,6 +394,7 @@ int writeMiniDump(LPEXCEPTION_POINTERS exceptionInfo)
     // Close and flush the log
     log::getInterface()->shutdown();
 
+    // We handled this exception
     return EXCEPTION_EXECUTE_HANDLER;
 }
 

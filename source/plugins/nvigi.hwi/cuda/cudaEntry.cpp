@@ -381,6 +381,7 @@ Result nvigiPluginRegister(framework::IFramework* framework)
     }
     else
     {
+        NVIGI_LOG_ERROR("Failed to load cig_scheduler_settings.dll");
         return kResultMissingDynamicLibraryDependency;
     }
 
@@ -393,10 +394,18 @@ Result nvigiPluginDeregister()
 {
     auto& ctx = (*hwiCuda::getContext());
 
-    framework::releaseInterface(plugin::getContext()->framework, nvigi::plugin::hwi::common::kId, ctx.hwiCommon);
+    // Free CIG helper DLL first (before releasing interfaces that might use it)
+    if (ctx.cigHelper)
+    {
+        FreeLibrary(ctx.cigHelper);
+        ctx.cigHelper = nullptr;
+    }
 
-    // We know this is a valid handle otherwise plugin register would have failed
-    FreeLibrary(ctx.cigHelper);
+    if (ctx.hwiCommon)
+    {
+        framework::releaseInterface(plugin::getContext()->framework, nvigi::plugin::hwi::common::kId, ctx.hwiCommon);
+        ctx.hwiCommon = nullptr;
+    }
 
     //! Do any other shutdown tasks here
     return kResultOk;

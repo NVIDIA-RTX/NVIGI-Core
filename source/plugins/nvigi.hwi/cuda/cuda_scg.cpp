@@ -130,7 +130,7 @@ namespace nvigi
 			}
 			else
 			{
-				NVIGI_LOG_WARN("CiG could not find CUDA DLL!");
+				NVIGI_LOG_WARN("Failed to load nvcuda.dll");
 				return nvigi::kResultDriverOutOfDate;
 			}
 
@@ -163,7 +163,7 @@ namespace nvigi
 			HMODULE cudaModule = LoadLibraryExA("nvcuda.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
 			if (!cudaModule)
 			{
-				NVIGI_LOG_WARN("CiG could not find CUDA DLL!");
+				NVIGI_LOG_WARN("Failed to load nvcuda.dll");
 				return nvigi::kResultDriverOutOfDate;
 			}
 

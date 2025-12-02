@@ -436,9 +436,10 @@ void logva(uint32_t level, ConsoleForeground color, const char* _file, int line,
         //! Important, va_list cannot be used multiple times!
         va_list args, args1;
 
-        // Make sure va_end is called before early out!
         va_start(args, _fmt);
         va_copy(args1, args);
+        // Make sure va_end is called before early out!
+        extra::ScopedTasks onExit([&]() { va_end(args); va_end(args1); });
 
         // Determine the required size of the formatted message (without null-terminator)
         int msgSize = std::vsnprintf(nullptr, 0, _fmt, args); //_vscprintf(_fmt, args);
@@ -463,13 +464,16 @@ void logva(uint32_t level, ConsoleForeground color, const char* _file, int line,
                 message.pop_back();
             }
         }
-        else
+        else if (msgSize < 0)
         {
-            // _fmt is bad or empty log
+            // _fmt is bad
             errorDetected = true;
         }
-        va_end(args);
-        va_end(args1);
+        else
+        {
+            // Empty message, nothing to log
+            return;
+        }
 
         if (errorDetected)
         {
