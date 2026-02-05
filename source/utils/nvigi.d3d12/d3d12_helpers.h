@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -73,13 +73,13 @@ Result validateParameters(const D3D12Parameters* d3d12Params, D3D_SHADER_MODEL m
                 D3D12_COMMAND_QUEUE_DESC desc = queues[i]->GetDesc();
                 if (desc.Type != queueTypes[i])
                 {
-                    NVIGI_LOG_ERROR("[D3D12Parameters::%s] is not of correct type", queueNames[i].c_str());
+                    NVIGI_LOG_ERROR("[D3D12Parameters::%s] is not of a correct type", queueNames[i].c_str());
                     return kResultInvalidParameter;
                 }
             }
             else
             {
-                NVIGI_LOG_WARN("[D3D12Parameters::%s] generating internal queue", queueNames[i].c_str());
+                NVIGI_LOG_WARN("[D3D12Parameters::%s] not provided - an internal queue might be generated if needed", queueNames[i].c_str());
             }
         }
         if (d3d12Params->getVersion() >= 3 && (d3d12Params->flags & nvigi::D3D12ParametersFlags::eDisableReBAR))
@@ -94,12 +94,9 @@ Result validateParameters(const D3D12Parameters* d3d12Params, D3D_SHADER_MODEL m
     return kResultOk;
 }
 
-Result getDeviceVendor(const D3D12Parameters* d3d12Params, system::ISystem* isystem, VendorId& vendor)
+Result getDeviceAdapter(const D3D12Parameters* d3d12Params, system::ISystem* isystem, system::Adapter** adapter)
 {
-    if (NVIGI_FAILED(res, validateParameters(d3d12Params)))
-    {
-        return res;
-    }
+    // NOTE: No implicit d3d12 parameter validation here, if needed do it before calling this function
     
     // The D3D priority API is only available on NVDA, so check the adapter's vendor
     nvigi::LUID d3dLuid;
@@ -123,18 +120,25 @@ Result getDeviceVendor(const D3D12Parameters* d3d12Params, system::ISystem* isys
         return kResultItemNotFound;
     }
 
-    system::Adapter* adapter = systemCaps->adapters[adapterId];
-    vendor = adapter->vendor;
+    *adapter = systemCaps->adapters[adapterId];
 
+    return kResultOk;
+}
+
+Result getDeviceVendor(const D3D12Parameters* d3d12Params, system::ISystem* isystem, VendorId& vendor)
+{
+    system::Adapter* adapter;
+    if (NVIGI_FAILED(res, getDeviceAdapter(d3d12Params, isystem, &adapter)))
+    {
+        return res;
+    }
+    vendor = adapter->vendor;
     return kResultOk;
 }
 
 Result applyNVDASpecificSettings(const D3D12Parameters* d3d12Params, IHWID3D12* iscg)
 {
-    if (NVIGI_FAILED(res, validateParameters(d3d12Params)))
-    {
-        return res;
-    }
+    // NOTE: No implicit d3d12 parameter validation here, if needed do it before calling this function
 
     if (!(d3d12Params->flags & nvigi::D3D12ParametersFlags::eComputeQueueSharedWithFrame))
     {

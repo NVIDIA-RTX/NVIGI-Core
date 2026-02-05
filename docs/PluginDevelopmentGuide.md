@@ -1,6 +1,6 @@
-# Plugin Development
+# Plugin Development Guide
 
-This is an advanced developer document, designed for those who wish to creat their own NVIGI plugins.  Before reading this document please read [the architecture document](./Architecture.md).  While writing a plugin only requires a copy of the NVIGI Core PDK (Plugin Development Kit), most of the plugins of interest are a part of the overall main SDK.  As a result, this document will make frequent reference to plugins from the main SDK when discussing concrete examples.
+This is an advanced developer document, designed for those who wish to create their own NVIGI plugins.  Before reading this document please read [the architecture document](./Architecture.md).  While writing a plugin only requires a copy of the NVIGI Core PDK (Plugin Development Kit), most of the plugins of interest are a part of the overall main SDK.  As a result, this document will make frequent reference to plugins from the main SDK when discussing concrete examples.
 
 ## Breaking ABI
 
@@ -54,6 +54,46 @@ Technically, NVIGI plugins are simply dynamic link libraries that export a set o
 * When accessing shared data or interfaces which are version 2 or higher **always check the version before accessing any members**
 
 It is worth noting that there are some exceptions when it comes to C ABI compatibility compliance and rules. They apply **only to the NON SHIPPING / NON-PRODUCTION plugins** which are designed to be used internal to NVIDIA or internal to the app developer only as helpers or debugging tools. It is perfectly fine to use STL `std::function` and lambdas to provide UI rendering functions for internal, non-end-user plugin(s) **as long as these code sections are compiled out in production builds**.
+
+### Context vs State Naming Convention
+
+In the modern plugin architecture, we distinguish between two levels of context:
+
+1. **Plugin Context** (global, shared)
+   - Structure name: `YourPluginContext` (e.g., `ASRContext`, `TemplateAIContext`)
+   - Created once when plugin DLL loads
+   - Shared across all instances
+   - Holds global plugin state (interfaces, shared resources)
+   - Defined using `NVIGI_PLUGIN_CONTEXT_CREATE_DESTROY` macro
+
+2. **Instance Context** (per-instance, isolated)
+   - Structure name: `InstanceContext` (NOT "State" - that's misleading)
+   - Created for each `createInstance()` call
+   - Each instance has its own separate context
+   - Holds per-instance resources (model handles, CUDA contexts, buffers)
+   - Stored in `PluginContext::pluginData` as `std::shared_ptr<InstanceContext>`
+
+**Why "Context" not "State"?**
+
+The term "State" implies mutable data that changes during execution. "Context" better represents the complete environment/resources for an instance, including configuration, handles, and runtime state.
+
+Example:
+```cpp
+// ✅ Clear naming
+struct ASRContext {           // Plugin-global context
+    IAutoSpeechRecognition api{};
+};
+
+struct InstanceContext {      // Per-instance context
+    whisper_context* model;
+    PushPoppableCudaContext cudaContext;
+};
+
+// ❌ Misleading naming
+struct ASRPluginState {       // Sounds global but is actually per-instance!
+    whisper_context* model;
+};
+```
 
 ### Thread Safety
 
@@ -162,20 +202,58 @@ source/plugins/nvigi.$name/
 
 #### Inference Plugins
 
-Here are the basic steps for setting up a new plugin performing **AI inference** tasks:
+The steps for setting up a new plugin performing **AI inference** tasks using the **modern C++ framework** are thoroughly detailed in the [Plugin Development Tutorial](PluginDevelopmentTutorial.md).
 
-* Clone `nvigi.template.inference` folder and rename it to your plugin's name
-* Rename public header `nvigi_template.h` to match your name
-* Search for "tmpl", "template", "Template" and "TEMPLATE" and replace with your name
-* Run `[sdk]/bin/x64/nvigi.tool.utils.exe --plugin nvigi.plugin.$name.$backend{.$api}` to obtain UID and crc24 and paste that in the public header `nvigi_$name.h` under `namespace nvigi::$mynamespace`
-* Rename folder `backend` to match target backend you are using (`ggml`, `cuda`, `trt`, `vk` etc.)
-  * Add more backends as needed if your plugin supports more than one (see gpt plugin for details)
-  * Ideally, all backends should implement the same interface declared in `nvigi_myplugin.h`
+**Modern Framework Features:**
+
+The new template uses `plugin_base_ai.hpp` which provides:
+- Type-safe parameter access with `std::expected` for error handling
+- Automatic async/sync execution handling
+- Built-in cancellation support
+- Ergonomic input/output handling via `PluginContext`
+- Platform-specific GPU context management (CUDA/D3D12/Vulkan)
+
+**Key Architecture:**
+
+Your plugin will define two types of context:
+- **Plugin Context** (global, shared across all instances): `YourPluginContext` - holds global state
+- **Instance Context** (per-instance): `InstanceContext` - holds per-instance state like model handles, CUDA contexts, buffers
+
+**Example Implementation:**
+
+```cpp
+struct InstanceContext {
+    void* model = nullptr;
+    bool isInitialized = false;
+    
+#if defined(PLUGIN_USES_CUDA)
+    PushPoppableCudaContext cudaContext;
+    InstanceContext(const NVIGIParameter* params) : cudaContext(params) {}
+#else
+    InstanceContext(const NVIGIParameter* params) {}
+#endif
+};
+
+class YourPlugin {
+    static Expected<void> onEvaluate(PluginContext& ctx) {
+        auto instanceCtx = ctx.getPluginData<std::shared_ptr<InstanceContext>>();
+        auto prompt = ctx.getInput<std::string>("prompt");
+        std::string response = your_model_generate(instanceCtx->get()->model, *prompt);
+        
+        // Trigger callback/results automatically
+        return ctx.buildOutput()
+            .set("response", response)
+            .build();
+    }
+};
+```
 
 In addition, the public git source is also available for many of the shipping plugins as a part of the public [GitHub Plugins source repo](https://github.com/NVIDIA-RTX/NVIGI-Plugins).
 
 > IMPORTANT:
 > All inference plugins are expected to implement the same interface and follow the same execution flow as defined in `source/utils/nvigi.ai`
+>
+> The modern framework in `source/plugins/common/plugin_base_ai.hpp` handles async execution, cancellation, and result polling automatically. Your plugin focuses only on the inference logic.
 
 #### Generic Plugins
 
@@ -293,9 +371,269 @@ else
 
 > IMPORTANT: Always check versions or interfaces or data structures received from other plugins, they could be older or newer since plugins can be updated independently
 
+### Modern C++ Plugin Framework
+
+The modern plugin framework (`plugin_base_ai.hpp`) simplifies plugin development by handling common boilerplate:
+
+**What the framework provides:**
+- Automatic async/sync execution handling
+- Built-in cancellation support with `ctx.isCancelled()`
+- Result polling infrastructure (`IPolledInferenceInterface`)
+- Type-safe input/output handling
+- Platform-specific GPU context management
+
+**How callbacks/results are triggered:**
+
+Your plugin's `onEvaluate()` method must use the fluent builder pattern to deliver results:
+
+```cpp
+static Expected<void> onEvaluate(PluginContext& ctx) {
+    // Get inputs
+    auto input = ctx.getInput<std::string>("input");
+    
+    // Do your inference
+    std::string output = process(*input);
+    
+    // IMPORTANT: Use .build() to trigger callback or store for polling
+    return ctx.buildOutput()
+        .set("output", output)
+        .build();  // This writes outputs AND triggers callback/polling
+}
+```
+
+**What happens in `.build()`:**
+1. Writes all outputs to `execCtx->outputs` slots (or creates temp slots)
+2. **WITH callback**: Invokes `execCtx->callback()` immediately
+3. **WITHOUT callback (polled)**: Signals `pollCtx` to unblock `getResults()`
+
+**Your code is identical for all modes** - the framework handles sync/async and callback/polled differences automatically!
+
+### Using the Modern Template
+
+The `nvigi.template.inference` demonstrates the complete lifecycle of a modern AI plugin:
+
+**Step 1: Define Your Plugin Class**
+
+Implement the `PluginConcept` interface with static methods:
+
+```cpp
+class YourPlugin {
+    static PluginID getPluginID();
+    static plugin::PluginInfo getPluginInfo();
+    static std::span<const InferenceDataDescriptor> getPluginInputSignature();
+    static std::span<const InferenceDataDescriptor> getPluginOutputSignature();
+    static Expected<CommonCapabilitiesAndRequirements> getPluginCapsAndRequirements(const NVIGIParameter*);
+    static Result onPluginRegister(framework::IFramework*);
+    static Result onPluginDeregister();
+    static Expected<void> onCreateInstance(const NVIGIParameter*, std::any& pluginData);
+    static Expected<void> onDestroyInstance(std::any& pluginData);
+    static Expected<void> onEvaluate(PluginContext& ctx);
+    static Expected<void> onCancel(PluginContext& ctx);
+};
+```
+
+**Step 2: Define Instance Context**
+
+Store your per-instance resources:
+
+```cpp
+struct InstanceContext {
+    void* model = nullptr;
+    std::string modelPath;
+    bool isInitialized = false;
+    
+#if defined(PLUGIN_USES_CUDA)
+    PushPoppableCudaContext cudaContext;
+    InstanceContext(const NVIGIParameter* params) : cudaContext(params) {}
+#endif
+};
+```
+
+**Step 3: Implement Core Logic**
+
+The `onEvaluate()` method contains your inference logic:
+
+```cpp
+static Expected<void> onEvaluate(PluginContext& ctx) {
+    // 1. Get instance context
+    auto instanceCtx = ctx.getPluginData<std::shared_ptr<InstanceContext>>()->get();
+    
+    // 2. Get inputs (type-safe)
+    auto input = ctx.getInput<std::string>("input");
+    
+    // 3. Check cancellation periodically for long operations
+    if (ctx.isCancelled()) {
+        return std::unexpected(Error{kResultCanceled, "Cancelled"});
+    }
+    
+    // 4. Run your inference
+    std::string output = your_model_process(instanceCtx->model, *input);
+    
+    // 5. Return results (triggers callback automatically)
+    return ctx.buildOutput().set("output", output).build();
+}
+```
+
+**Step 4: Export Plugin**
+
+Use the macro to wire everything together:
+
+```cpp
+NVIGI_MODERN_PLUGIN(
+    nvigi::YourPlugin,                                  // Plugin class
+    nvigi::IYourInterface,                              // API interface
+    "nvigi.plugin.yourname",                            // Plugin name
+    Version(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH),
+    Version(API_MAJOR, API_MINOR, API_PATCH),
+    yourname,                                           // Namespace
+    YourPluginContext                                   // Plugin context type
+)
+```
+
+### GPU Context Management
+
+The modern framework provides automatic GPU context management for different platforms:
+
+#### CUDA Context Management
+
+For CUDA plugins, use `PushPoppableCudaContext` in your `InstanceContext`:
+
+```cpp
+struct InstanceContext {
+#if defined(PLUGIN_USES_CUDA)
+    PushPoppableCudaContext cudaContext;
+    std::vector<cudaStream_t> cudaStreams;
+    
+    InstanceContext(const NVIGIParameter* params) : cudaContext(params) {}
+#else
+    InstanceContext(const NVIGIParameter* params) {}
+#endif
+};
+```
+
+The `PushPoppableCudaContext` constructor initializes the CUDA context from parameters (handles CiG - CUDA in Graphics). In `onEvaluate()`, use `RuntimeContextScope` for RAII context push/pop:
+
+```cpp
+static Expected<void> onEvaluate(PluginContext& ctx) {
+    auto instanceCtx = ctx.getPluginData<std::shared_ptr<InstanceContext>>()->get();
+    
+#if defined(PLUGIN_USES_CUDA)
+    // RAII scope guard: pushes context on construction, pops on destruction
+    RuntimeContextScope scope(*instanceCtx);
+    
+    // Now safe to use CUDA APIs
+    cudaMemcpyAsync(dst, src, size, cudaMemcpyHostToDevice, instanceCtx->cudaStreams[0]);
+    cudaStreamSynchronize(instanceCtx->cudaStreams[0]);
+    // Context automatically popped when scope exits
+#endif
+    
+    // Your inference code...
+}
+```
+
+#### D3D12 Context Management
+
+For D3D12 plugins, acquire the system interface in `onPluginRegister()`:
+
+```cpp
+static Result onPluginRegister(framework::IFramework* framework) {
+#if defined(PLUGIN_USES_D3D12)
+    auto& ctx = ModernPluginBase<YourPlugin, IYourInterface>::getContext();
+    if (!framework::getInterface(framework, nvigi::core::framework::kId, &ctx.isystem)) {
+        return kResultMissingInterface;
+    }
+#endif
+    return kResultOk;
+}
+```
+
+#### Vulkan Context Management
+
+For Vulkan plugins, manage Vulkan resources in your `InstanceContext` and clean them up in the destructor.
+
+### Common Issues and Solutions
+
+**Issue: Callback never triggered in tests**
+
+**Cause:** Using `ctx.setOutput()` without calling `.build()`
+
+```cpp
+// ❌ Wrong - callback never triggered
+auto result = ctx.setOutput("output", value);
+return {};
+
+// ✅ Correct - use fluent builder with .build()
+return ctx.buildOutput()
+    .set("output", value)
+    .build();
+```
+
+**Issue: "Instance context not initialized" error**
+
+**Cause:** Not storing instance context as `std::shared_ptr`
+
+```cpp
+// ❌ Wrong
+pluginData = InstanceContext{};
+
+// ✅ Correct
+auto instanceCtx = std::make_shared<InstanceContext>(params);
+pluginData = instanceCtx;
+```
+
+**Issue: CUDA context errors**
+
+**Cause:** Not checking `cudaContext.constructorSucceeded` or missing `RuntimeContextScope`
+
+```cpp
+// In onCreateInstance:
+#if defined(PLUGIN_USES_CUDA)
+auto instanceCtx = std::make_unique<InstanceContext>(params);
+if (!instanceCtx->cudaContext.constructorSucceeded) {
+    return std::unexpected(Error{kResultInvalidState, "CUDA context init failed"});
+}
+#endif
+
+// In onEvaluate:
+#if defined(PLUGIN_USES_CUDA)
+RuntimeContextScope scope(*instanceCtx);  // RAII push/pop
+// ... CUDA API calls ...
+#endif
+```
+
+**Issue: Compilation error with `NVIGI_MODERN_PLUGIN` macro**
+
+**Cause:** Plugin context not defined in correct namespace
+
+```cpp
+// ✅ Correct - define in your plugin's namespace
+namespace nvigi::yourplugin {
+    struct YourPluginContext {
+        NVIGI_PLUGIN_CONTEXT_CREATE_DESTROY(YourPluginContext);
+        void onCreateContext() {}
+        void onDestroyContext() {}
+    };
+}
+
+// Then use without nvigi:: prefix in macro
+NVIGI_MODERN_PLUGIN(
+    nvigi::YourPlugin,
+    nvigi::IYourInterface,
+    "nvigi.plugin.yourname",
+    Version(...),
+    Version(...),
+    yourplugin,          // Namespace where YourPluginContext is defined
+    YourPluginContext    // Will be found in nvigi::yourplugin namespace
+)
+```
+
 ### Exception Handling
 
-When implementing custom APIs in your exported interface always make sure to wrap your functions using the `NVIGI_CATCH_EXCEPTION` macro. Here is an example on an interface implementation:
+When implementing custom APIs in your exported interface always make sure to wrap your functions using the `NVIGI_CATCH_EXCEPTION` macro. 
+
+**Note:** The modern plugin framework (`NVIGI_MODERN_PLUGIN` macro) handles exception wrapping automatically for all lifecycle methods.
+
+Here is an example on an interface implementation:
 
 ```cpp
 //! Example interface implementation

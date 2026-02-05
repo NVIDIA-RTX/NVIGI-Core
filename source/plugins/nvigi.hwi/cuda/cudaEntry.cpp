@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -53,6 +53,8 @@ struct CudaContext
     CigSchedulerSettingsAPI sched;
 
     HMODULE cigHelper{};
+
+    Version driverVersion;
 };
 };
 
@@ -258,9 +260,32 @@ static nvigi::Result cudaApplyGlobalGpuInferenceSchedulingMode(CUstream* cudaStr
         okSoFar = ctx.sched.StreamSetWorkloadType(cudaStreams[i], CigWorkloadType(schedulingMode));
     }
 
-    // Translate CUresult to nvigi::Result
+    //! Translate CUresult to nvigi::Result.
+    //!
+    //! `CUDA_ERROR_INVALID_VALUE` may be returned by StreamSetWorkloadType() either 
+    //! (1) when an invalid argument is passed, or (2) when the driver is outdated. 
+    //! So we perform an explicit driver version check below.
     nvigi::Result retval = kResultOk;
-    if (okSoFar != CUDA_SUCCESS) retval = kResultDriverOutOfDate;
+    if (okSoFar != CUDA_SUCCESS)
+    {
+        if (ctx.driverVersion.major < 575)
+        {
+            retval = kResultDriverOutOfDate;
+            NVIGI_LOG_ERROR_ONCE("Driver version 575.00 or newer is required to set the GPU scheduling mode.");
+        }
+        else
+        {
+            // Driver is sufficient, a "real" CUDA error
+            const char* name = nullptr;
+            const char* msg = nullptr;
+            cuGetErrorName(okSoFar, &name);
+            cuGetErrorString(okSoFar, &msg);
+            if (!name) name = "Unknown";
+            if (!msg)  msg = "Unknown";
+            NVIGI_LOG_ERROR("CUDA error: %s - %s", name, msg);
+            retval = kResultInvalidParameter;
+        }
+    }
 
     return retval;
 }
@@ -322,11 +347,25 @@ Result nvigiPluginGetInfo(nvigi::framework::IFramework* framework, nvigi::plugin
         return kResultMissingInterface;
     } 
     extra::ScopedTasks releaseSystem([framework, system]() {framework::releaseInterface(framework, nvigi::core::framework::kId, system); });
-    if (!(system->getSystemCaps()->flags & nvigi::SystemFlags::eHWSchedulingEnabled))
+
+    bool hasNVAdapter = false;
+    const nvigi::system::SystemCaps* caps = system->getSystemCaps();
+    for (uint32_t i = 0; i < caps->adapterCount; i++)
+    {
+        const nvigi::system::Adapter* adapter = caps->adapters[i];
+        if (adapter->vendor == VendorId::eNVDA)
+        {
+            hasNVAdapter = true;
+            break;
+        }     
+    }
+
+    if (hasNVAdapter && !(system->getSystemCaps()->flags & nvigi::SystemFlags::eHWSchedulingEnabled))
     {
         NVIGI_LOG_ERROR("HW scheduling in OS must be enabled in order for 'nvigi.plugin.hwi.cuda' to operate correctly");
         return kResultInvalidState;
     }
+    (*hwiCuda::getContext()).driverVersion = system->getSystemCaps()->driverVersion;
     return kResultOk;
 }
 

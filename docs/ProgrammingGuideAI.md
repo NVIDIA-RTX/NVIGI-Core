@@ -533,6 +533,37 @@ There are two ways to obtain results:
 * By providing callback in the `InferenceExecutionContext` and receiving results either on host's or NVIGI's thread
 * By NOT providing a callback and forcing `evaluateAsync` path, which results in requiring host app to poll for result.
 
+### Understanding Execution States
+
+When receiving results through callbacks or polling, the execution state indicates the status of the data:
+
+* **`InferenceExecutionStateDone`** - All processing is complete, no more data will be provided
+* **`InferenceExecutionStateCancel`** - The inference was canceled by the host
+* **`InferenceExecutionStateDataPending`** - The provided data is **final and will not change**, but more data is expected. This data should be committed/saved.
+* **`InferenceExecutionStateDataPartial`** - The provided data is **tentative and may change**. The plugin may replace or correct this data in subsequent callbacks as more context becomes available.
+
+#### Partial Data Behavior
+
+`InferenceExecutionStateDataPartial` is particularly important for streaming scenarios like Automated Speech Recognition (ASR). As more audio is processed, the model gains additional context which can cause it to "correct" previously transcribed text.
+
+For example, an ASR plugin processing the phrase "Hello world, how are you?" might produce:
+
+```
+Callback 1: "Hell" (Partial)
+Callback 2: "Hello" (Partial - corrected from "Hell")  
+Callback 3: "Hello" (Pending - confirmed, won't change)
+Callback 4: "Hello world" (Pending - "world" is confirmed)
+Callback 5: "Hello world how" (Partial - "how" is tentative)
+Callback 6: "Hello world hi" (Partial - corrected to "hi" with more context)
+Callback 7: "Hello world hi" (Pending - "hi" is confirmed)
+Callback 8: "Hello world hi there" (Done - complete transcription)
+```
+
+Applications should handle partial data appropriately:
+* Display partial data to users with visual indication (e.g., dimmed/italicized text) that it may change
+* Do not commit partial data to permanent storage or trigger actions based on it
+* Only process/commit data marked as Pending or Done
+
 ### Callback Approach
 
 This is the simplest and easiest way to obtain results. Callback function of the following type must be provided via `InferenceExecutionContext` before calling evaluate:
@@ -547,11 +578,26 @@ auto inferenceCallback = [](const nvigi::InferenceExecutionContext* execCtx, nvi
        const nvigi::InferenceDataText* text{}; 
        execCtx->outputs->findAndValidateSlot(nvigi::kASRDataSlotTranscribedText, &text); 
        std::string transcribedText = text->getUtf8Text();
-       //! Do something with the received text 
+       
+       //! Handle different states appropriately
+       if (state == nvigi::InferenceExecutionStateDataPartial)
+       {
+           //! Partial data - may change in subsequent callbacks
+           //! Display to user with indication it's tentative (e.g., dimmed/italicized)
+           //! Do NOT commit to permanent storage or trigger actions
+           userCtx->displayPartialResult(transcribedText);
+       }
+       else if (state == nvigi::InferenceExecutionStateDataPending || state == nvigi::InferenceExecutionStateDone)
+       {
+           //! Pending/Done - this data is final and won't change
+           //! Safe to commit to storage, trigger actions, etc.
+           userCtx->commitFinalResult(transcribedText);
+       }
     } 
     if (state == nvigi::InferenceExecutionStateDone) 
     { 
         //! This is all the data we can expect to receive 
+        userCtx->onComplete();
     } 
     else if(userCtx->needToInterruptInference) 
     { 

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -419,7 +419,6 @@ TEST_CASE("init", "[core]")
 //! 
 #ifdef NVIGI_WINDOWS
 #include "source/plugins/nvigi.hwi/cuda/tests.h"
-#include "source/plugins/nvigi.template.inference.cuda/backend/tests.h"
 #endif
 
 // We test the template tests to make sure that they will compile after the 

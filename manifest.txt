@@ -13,7 +13,8 @@
 	nvigi-core-source\docs/Architecture.md
 	nvigi-core-source\docs/GpuSchedulingForAI.md
 	nvigi-core-source\docs/HybridAI.md
-	nvigi-core-source\docs/PluginDevelopment.md
+	nvigi-core-source\docs/PluginDevelopmentGuide.md
+	nvigi-core-source\docs/PluginDevelopmentTutorial.md
 	nvigi-core-source\docs/ProgrammingGuide.md
 	nvigi-core-source\docs/ProgrammingGuideAI.md
 	nvigi-core-source\docs\media/guid-1.png
@@ -36,6 +37,7 @@
 	nvigi-core-source\source\core\nvigi.api/nvigi_cuda.h
 	nvigi-core-source\source\core\nvigi.api/nvigi_d3d12.h
 	nvigi-core-source\source\core\nvigi.api/nvigi_helpers.h
+	nvigi-core-source\source\core\nvigi.api/nvigi_io.h
 	nvigi-core-source\source\core\nvigi.api/nvigi_result.h
 	nvigi-core-source\source\core\nvigi.api/nvigi_security.h
 	nvigi-core-source\source\core\nvigi.api/nvigi_struct.h
@@ -64,6 +66,7 @@
 	nvigi-core-source\source\core\nvigi.thread/thread.h
 	nvigi-core-source\source\core\nvigi.types/tests.h
 	nvigi-core-source\source\core\nvigi.types/types.h
+	nvigi-core-source\source\plugins\common/plugin_base_ai.hpp
 	nvigi-core-source\source\plugins\nvigi.hwi\common/commonEntry.cpp
 	nvigi-core-source\source\plugins\nvigi.hwi\common/nvigi_hwi_common.h
 	nvigi-core-source\source\plugins\nvigi.hwi\common/plugin.rc
@@ -85,6 +88,14 @@
 	nvigi-core-source\source\plugins\nvigi.hwi\d3d12/premake.lua
 	nvigi-core-source\source\plugins\nvigi.hwi\d3d12/resource.h
 	nvigi-core-source\source\plugins\nvigi.hwi\d3d12/versions.h
+	nvigi-core-source\source\plugins\nvigi.net/net.cpp
+	nvigi-core-source\source\plugins\nvigi.net/net.h
+	nvigi-core-source\source\plugins\nvigi.net/netEntry.cpp
+	nvigi-core-source\source\plugins\nvigi.net/nvigi_net.h
+	nvigi-core-source\source\plugins\nvigi.net/plugin.rc
+	nvigi-core-source\source\plugins\nvigi.net/premake.lua
+	nvigi-core-source\source\plugins\nvigi.net/resource.h
+	nvigi-core-source\source\plugins\nvigi.net/versions.h
 	nvigi-core-source\source\plugins\nvigi.template.generic/nvigi_template.h
 	nvigi-core-source\source\plugins\nvigi.template.generic/premake.lua
 	nvigi-core-source\source\plugins\nvigi.template.generic\backend/nvcf.h
@@ -95,14 +106,6 @@
 	nvigi-core-source\source\plugins\nvigi.template.generic\backend/versions.h
 	nvigi-core-source\source\plugins\nvigi.template.inference/nvigi_template_infer.h
 	nvigi-core-source\source\plugins\nvigi.template.inference/premake.lua
-	nvigi-core-source\source\plugins\nvigi.template.inference.cuda/nvigi_template_infer.h
-	nvigi-core-source\source\plugins\nvigi.template.inference.cuda/premake.lua
-	nvigi-core-source\source\plugins\nvigi.template.inference.cuda\backend/plugin.rc
-	nvigi-core-source\source\plugins\nvigi.template.inference.cuda\backend/resource.h
-	nvigi-core-source\source\plugins\nvigi.template.inference.cuda\backend/templateEntry.cpp
-	nvigi-core-source\source\plugins\nvigi.template.inference.cuda\backend/tests.h
-	nvigi-core-source\source\plugins\nvigi.template.inference.cuda\backend/versions.h
-	nvigi-core-source\source\plugins\nvigi.template.inference\backend/nvcf.h
 	nvigi-core-source\source\plugins\nvigi.template.inference\backend/plugin.rc
 	nvigi-core-source\source\plugins\nvigi.template.inference\backend/resource.h
 	nvigi-core-source\source\plugins\nvigi.template.inference\backend/templateEntry.cpp
@@ -125,6 +128,7 @@
 	nvigi-core-source\source\utils\nvigi.dsound/recorder.h
 	nvigi-core-source\source\utils\nvigi.hwi\cuda/push_poppable_cuda_context.h
 	nvigi-core-source\source\utils\nvigi.hwi\cuda/runtime_context_scope.h
+	nvigi-core-source\source\utils\nvigi.io/io.h
 	nvigi-core-source\source\utils\nvigi.net/grpc.h
 	nvigi-core-source\source\utils\nvigi.net/roots_pem.h
 	nvigi-core-source\source\utils\nvigi.poll/poll.h

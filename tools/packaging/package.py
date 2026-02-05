@@ -42,6 +42,18 @@ vulkan_ext = {"dep":"vulkansdk", "path":"external/vulkanSDK",
                            "items":[{"name":"vulkansdk", "version":"1.4.321.1-windows-x86_64","platforms":"windows-x86_64"}]
 }
 
+curl_ext = {"dep":"libcurl", "path":"external/libcurl",
+                           "items":[{"name":"libcurl", "version":"7.80.0+nv1-windows-x86_64","platforms":"windows-x86_64"},
+                                    {"name":"libcurl", "version":"8.1.2-3-linux-x86_64-static-release","platforms":"linux-x86_64"}
+                                   ]
+                          }
+
+zlib_ext = {"dep":"zlib", "path":"external/zlib",
+                           "items":[{"name":"zlib", "version":"1.3.1_x64-windows","platforms":"windows-x86_64"},
+                                    {"name":"zlib", "version":"1.3.1_x64-linux","platforms":"linux-x86_64"}
+                                   ]
+                          }
+
 cuda12dlls = {'win-x64':[
     'external/cuda/bin/cudart64_12.dll'
     ]
@@ -55,6 +67,12 @@ cuptiDlls =  {'win-x64':[
 amd_agsDll =  {'win-x64':[
     'external/amd-ags/ags_lib/lib/amd_ags_x64.dll'],
 }
+    
+net_dlls = {'win-x64':[
+    'external/zlib/debug/bin/zlibd1.dll', 
+    'external/zlib/bin/zlib1.dll', # add release since some 3rd party stuff only ships as release
+],
+}
 
 all_plat = ['win-x64']
 plat_suffixes = {'win-x64':'x64'}
@@ -65,11 +83,11 @@ all_components = {
         'sharedlib': ['nvigi.core.framework'],
         'libs': ['nvigi.core.framework'],
         'includes': ['source/**/nvigi*.h'],
-        'sources': ['core', 'utils', 'shared'],
+        'sources': ['core', 'utils', 'shared', 'plugins/common'],
         'runtime_sources': ['utils/nvigi.cig_compatibility_checker', 'utils/nvigi.dsound', 'utils/nvigi.wav'],
         'premake': 'source/core/premake.lua',
         '3rdparty': amd_agsDll,
-        'docs': ['Architecture.md', 'PluginDevelopment.md', 'GpuSchedulingForAI.md', 'HybridAI.md', 'ProgrammingGuide.md', 'ProgrammingGuideAI.md'],
+        'docs': ['Architecture.md', 'PluginDevelopmentGuide.md', 'PluginDevelopmentTutorial.md', 'GpuSchedulingForAI.md', 'HybridAI.md', 'ProgrammingGuide.md', 'ProgrammingGuideAI.md'],
         'externals': [agility_sdk_ext, amd_ags_ext, nlohmann_json_ext, nvapi_ext]
     },
     'plugin.hwi.common' : {
@@ -97,6 +115,15 @@ all_components = {
         'externals': [cig_scheduler_settings_ext],
         'premake': 'source/plugins/nvigi.hwi/d3d12/premake.lua' 
     },
+    'plugin.net': {
+        'platforms': all_plat,
+        '3rdparty': net_dlls,
+        'sharedlib': ['nvigi.plugin.net'],
+        'includes': ['source/plugins/nvigi.net/nvigi_net.h'],
+        'sources': ['plugins/nvigi.net'],
+        'externals': [nlohmann_json_ext, curl_ext, zlib_ext],
+        'premake': 'source/plugins/nvigi.net/premake.lua' 
+    },
     'plugin.template.generic' : {
         'platforms': all_plat,
         'sharedlib': ['nvigi.plugin.template.generic'],
@@ -112,13 +139,6 @@ all_components = {
         'premake': 'source/plugins/nvigi.template.inference/premake.lua',
         'model': 'nvigi.plugin.template.inference',
         'public_models': ['{01234567-0123-0123-0123-0123456789AB}']
-    },
-    'plugin.template.inference.cuda' : {
-        'platforms': all_plat,
-        'sharedlib': ['nvigi.plugin.template.inference.cuda'],
-        'includes': ['source/plugins/nvigi.template.inference.cuda/nvigi_template_infer.h'],
-        'sources': ['plugins/nvigi.template.inference.cuda', 'shared'],
-        'premake': 'source/plugins/nvigi.template.inference.cuda/premake.lua' 
     },
     'test' : {
         'platforms': all_plat,
@@ -144,7 +164,6 @@ runtime_components = [
     'plugin.hwi.d3d12',
     'plugin.template.generic',
     'plugin.template.inference',
-    'plugin.template.inference.cuda',
     'test',
     'tool.utils'
 ]
@@ -152,14 +171,14 @@ runtime_components = [
 runtime_source_components = [
     'core.framework',
     'plugin.template.generic',
-    'plugin.template.inference',
-    'plugin.template.inference.cuda'
+    'plugin.template.inference'
 ]
 
 pdk_source_components = [
     'plugin.hwi.common',
     'plugin.hwi.cuda',
     'plugin.hwi.d3d12',
+    'plugin.net',
     'test',
     'tool.utils'
 ]
@@ -303,17 +322,17 @@ def parse_args():
     default_config = 'pdk'
     parser.add_argument('-config',
                         dest='config', 
-                        choices=['runtime', 'pdk', 'src'],
+                        choices=['runtime', 'runtime-sdk', 'int-relsigned', 'pdk', 'src'], # runtime, int-relsigned, and runtime-sdk are equivalent here
                         help=f'Config {default_config}',
                         default=default_config)
     
-    parser.add_argument('-debug', 
+    parser.add_argument('-debug', '-Debug', 
                         dest='build_modes',action='append_const', const='Debug',
                         help=f'Package the debug config (default all configs)')
-    parser.add_argument('-production', 
+    parser.add_argument('-production', '-Production', 
                         dest='build_modes',action='append_const', const='Production',
                         help=f'Package the production config (default all configs)')
-    parser.add_argument('-release', 
+    parser.add_argument('-release', '-Release', 
                         dest='build_modes',action='append_const', const='Release',
                         help=f'Package the release config (default all configs)')
 
@@ -344,6 +363,10 @@ def parse_args():
 if __name__ == '__main__':
     args = parse_args()
     dest_root = Path(f'{args.dest}')
+
+    # convert runtime-sdk and int-relsigned to runtime for packaging purposes
+    if args.config == 'runtime-sdk' or args.config == 'int-relsigned':
+        args.config = 'runtime'
 
     src=Path('.')
     dest_models=dest_root/'data/nvigi.models'

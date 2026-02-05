@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -28,7 +28,7 @@ constexpr uint32_t kMaxNumSupportedGPUs = 8;
 // {71423331-2534-4C23-A4B1-95D54CC25F4F}
 struct alignas(8) Adapter {
     Adapter() {}; 
-    NVIGI_UID(UID({ 0x71423331, 0x2534, 0x4c23,{ 0xa4, 0xb1, 0x95, 0xd5, 0x4c, 0xc2, 0x5f, 0x4f } }), kStructVersion1)
+    NVIGI_UID(UID({ 0x71423331, 0x2534, 0x4c23,{ 0xa4, 0xb1, 0x95, 0xd5, 0x4c, 0xc2, 0x5f, 0x4f } }), kStructVersion2)
     LUID id {};
     VendorId vendor{};
     uint32_t bit; // in the adapter bit-mask
@@ -42,6 +42,15 @@ struct alignas(8) Adapter {
     void* nativeInterface{};
     types::string description{};
     void* nvHandle{};
+    //! v2
+    uint32_t coreCount{};
+    uint32_t smCount{};
+    uint32_t rtCoreCount{};
+    uint32_t tensorCoreCount{};
+    uint32_t graphicsBoostClockMHz{};
+    uint32_t memoryClockMHz{};
+    uint32_t pcieWidth{};
+    uint32_t memoryBusWidthBits{};
 
     // NEW MEMBERS GO HERE, BUMP THE VERSION!
 };

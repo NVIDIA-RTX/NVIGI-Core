@@ -1,11 +1,15 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
-#include "source/shared/coresdkVersions.h"
 
-#define VERSION_MAJOR CORESDK_SHARED_VERSION_MAJOR
-#define VERSION_MINOR CORESDK_SHARED_VERSION_MINOR
-#define VERSION_PATCH CORESDK_SHARED_VERSION_PATCH
-#define API_MAJOR CORESDK_API_VERSION_MAJOR
-#define API_MINOR CORESDK_API_VERSION_MINOR
-#define API_PATCH CORESDK_API_VERSION_PATCH
+#pragma once
+
+// Plugin version
+#define VERSION_MAJOR 1
+#define VERSION_MINOR 0
+#define VERSION_PATCH 0
+
+// API version - increment when interface changes
+#define API_MAJOR 0
+#define API_MINOR 0
+#define API_PATCH 1

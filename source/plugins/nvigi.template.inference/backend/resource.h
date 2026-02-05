@@ -1,8 +1,25 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 #include "versions.h"
 #include "../../../_artifacts/gitVersion.h"
+
+// Fallback defines if gitVersion.h doesn't provide them
+#ifndef DISTRIBUTION_INFO
+#define DISTRIBUTION_INFO "Development Build"
+#endif
+
+#ifndef BUILD_CONFIG_INFO
+#define BUILD_CONFIG_INFO "DEBUG"
+#endif
+
+#ifndef GIT_LAST_COMMIT
+#define GIT_LAST_COMMIT "unknown"
+#endif
+
+#ifndef GIT_BRANCH_AND_LAST_COMMIT
+#define GIT_BRANCH_AND_LAST_COMMIT "unknown/unknown"
+#endif
 
 #define STR1(a) #a
 #define STR(a) STR1(a)
@@ -14,8 +31,8 @@
 #define VER_PRODUCTVERSION_STR      STR(VER_PRODUCTVERSION)
 
 #define VER_COMPANYNAME_STR         "NVIDIA"
-#define VER_FILEDESCRIPTION_STR     "NVIGI.TEMPLATE PLUGIN - " DISTRIBUTION_INFO
-#define VER_INTERNALNAME_STR        "NVIGI.TEMPLATE"
+#define VER_FILEDESCRIPTION_STR     "NVIGI.TEMPLATE.AI PLUGIN - " DISTRIBUTION_INFO
+#define VER_INTERNALNAME_STR        "NVIGI.TEMPLATE.AI"
 #define VER_LEGALCOPYRIGHT_STR      "Copyright 2024-2025 NVIDIA CORP"
 #define VER_LEGALTRADEMARKS1_STR    "All Rights Reserved"
 #define VER_LEGALTRADEMARKS2_STR    VER_LEGALTRADEMARKS1_STR

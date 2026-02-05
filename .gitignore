@@ -1,6 +1,7 @@
 # Generated build directories and artifacts
 _project/
 _artifacts/
+_runtime/
 docs/_*/
 /_bin/**
 /_lib/**

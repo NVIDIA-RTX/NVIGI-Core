@@ -60,6 +60,15 @@ IF NOT "%1"=="" (
     IF "%1"=="-production" (
         SET cfgs=Production
     )    
+    IF "%1"=="-Debug" (
+        SET cfgs=Debug
+    )
+    IF "%1"=="-Release" (
+        SET cfgs=Release
+    )
+    IF "%1"=="-Production" (
+        SET cfgs=Production
+    )    
     IF "%1"=="-all" (
         SET cfgs=Debug Release Production
     )    

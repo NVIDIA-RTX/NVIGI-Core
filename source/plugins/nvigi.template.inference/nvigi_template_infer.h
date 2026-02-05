@@ -1,5 +1,18 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
+//
+// Modern AI Plugin Template
+// =========================
+// This template demonstrates how to create an AI inference plugin using the
+// modern C++ plugin_base_ai.hpp framework. It provides a clean, type-safe API
+// with support for CUDA, D3D12, and Vulkan backends.
+//
+// Quick Start:
+// 1. Replace all instances of "TemplateAI" with your plugin name
+// 2. Update the plugin ID (run: .\tools\nvigi.tool.utils.exe --plugin nvigi.plugin.your_name)
+// 3. Update GUIDs for all structures (run: .\tools\nvigi.tool.utils.exe --interface YourInterfaceName)
+// 4. Define PLUGIN_USES_CUDA, PLUGIN_USES_D3D12, or PLUGIN_USES_VULKAN as needed
+// 5. Implement your inference logic in the TemplateAIPlugin class
 //
 
 #pragma once
@@ -11,103 +24,98 @@ namespace nvigi
 namespace plugin
 {
 
-//! TO DO: Run .\tools\nvigi.tool.utils.exe --plugin nvigi.plugin.my_name.my_backend.my_api and paste new id here
-namespace tmpl_infer
+// ============================================================================
+// Plugin ID
+// ============================================================================
+// TODO: Run .\tools\nvigi.tool.utils.exe --plugin nvigi.plugin.your_name.your_backend
+//       and paste the generated ID here
+namespace template_ai
 {
-    constexpr PluginID kIdBackendApi = { {0x13830f54, 0x77a0, 0x4626,{0x8f, 0xe7, 0x48, 0x80, 0xb0, 0x61, 0x96, 0xc9}}, 0xc82329 }; //{13830F54-77A0-4626-8FE7-4880B06196C9} [nvigi.plugin.template.inference.backend.api]}
+    constexpr PluginID kId = { {0xa1b2c3d4, 0xe5f6, 0x7890, {0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90}}, 0x123456 };
 }
-}
 
-const char* kTemplateInputSlotA = "inputSlotA";
-const char* kTemplateInputSlotB = "inputSlotB";
-const char* kTemplateInputSlotC = "inputSlotC";
+} // namespace plugin
 
-//! IMPORTANT: DO NOT DUPLICATE GUIDs - WHEN CLONING AND REUSING STRUCTURES ALWAYS ASSIGN NEW GUID
-//! 
-//! Run .\tools\nvigi.tool.utils.exe --interface MyInterfaceName and paste new structs here, delete below templates as needed
-//! 
-//! {78149310-8761-4204-AA00-FB17D8120F0A}
-struct alignas(8) TemplateInferCreationParameters {
-    TemplateInferCreationParameters() {};
-    NVIGI_UID(UID({ 0x78149310, 0x8761, 0x4204,{0xaa, 0x00, 0xfb, 0x17, 0xd8, 0x12, 0x0f, 0x0a} }), kStructVersion1)
+// ============================================================================
+// Input/Output Slot Names
+// ============================================================================
+// Define semantic names for your plugin's input and output slots
+constexpr const char* kTemplateAIInputPrompt = "prompt";
+constexpr const char* kTemplateAIOutputResponse = "response";
+
+// ============================================================================
+// Creation Parameters
+// ============================================================================
+// IMPORTANT: DO NOT DUPLICATE GUIDs - WHEN CLONING AND REUSING STRUCTURES ALWAYS ASSIGN NEW GUID
+// 
+// Run .\tools\nvigi.tool.utils.exe --interface TemplateAICreationParameters and paste new struct here
+//
+// TODO: Replace this GUID with a new one
+struct alignas(8) TemplateAICreationParameters
+{
+    TemplateAICreationParameters() = default;
+    NVIGI_UID(UID({ 0x11111111, 0x2222, 0x3333, {0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb} }), kStructVersion1)
+
+    // v1 members - DO NOT break C ABI compatibility:
+    // * Do not use virtual functions, volatile, STL containers (std::vector, etc.)
+    // * Do not use nested structures, always use pointer members
+    // * Do not use internal types in public interfaces
+    // * Do not change or move existing members once interface has shipped
+
+    // Example: Custom parameter for your plugin
+    // float temperature = 1.0f;
+    // int32_t maxTokens = 512;
+
+    // v2+ members go here - remember to update kStructVersionN in NVIGI_UID above!
 };
 
-NVIGI_VALIDATE_STRUCT(TemplateInferCreationParameters)
+NVIGI_VALIDATE_STRUCT(TemplateAICreationParameters)
 
-//! IMPORTANT: DO NOT DUPLICATE GUIDs - WHEN CLONING AND REUSING STRUCTURES ALWAYS ASSIGN NEW GUID
-//! 
-//! Run .\tools\nvigi.tool.utils.exe --interface MyInterfaceName and paste new structs here, delete below templates as needed
-//! 
-//! {0CB6A547-9880-4A62-A325-8220FD3EDF2F}
-struct alignas(8) TemplateInferCreationParametersEx {
-    TemplateInferCreationParametersEx() {};
-    NVIGI_UID(UID({ 0x0cb6a547, 0x9880, 0x4a62,{0xa3, 0x25, 0x82, 0x20, 0xfd, 0x3e, 0xdf, 0x2f} }), kStructVersion1)
-    //! Some extra optional parameters go here
-    //! 
-    //! This structure is normally chained to TemplateInferCreationParameters using the _next member.
+// ============================================================================
+// Extended Creation Parameters (Optional)
+// ============================================================================
+// Use this for optional parameters that can be chained via _next member
+//
+// IMPORTANT: DO NOT DUPLICATE GUIDs - ALWAYS ASSIGN NEW GUID
+//
+// TODO: Replace this GUID with a new one
+struct alignas(8) TemplateAICreationParametersEx
+{
+    TemplateAICreationParametersEx() = default;
+    NVIGI_UID(UID({ 0x22222222, 0x3333, 0x4444, {0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc} }), kStructVersion1)
+
+    // Optional parameters go here
+    // This structure is chained to TemplateAICreationParameters using the _next member
+
+    // Example:
+    // bool enableOptimization = true;
+    // const char* utf8CustomConfigPath = nullptr;
 };
 
-NVIGI_VALIDATE_STRUCT(TemplateInferCreationParametersEx)
+NVIGI_VALIDATE_STRUCT(TemplateAICreationParametersEx)
 
-//! IMPORTANT: DO NOT DUPLICATE GUIDs - WHEN CLONING AND REUSING STRUCTURES ALWAYS ASSIGN NEW GUID
-//! 
-//! Run .\tools\nvigi.tool.utils.exe --interface MyInterfaceName and paste new structs here, delete below templates as needed
-//! 
-//! {C1850AC2-AC46-4E4B-A2FA-451B5AC3E905}
-struct alignas(8) TemplateInferCapabilitiesAndRequirements {
-    TemplateInferCapabilitiesAndRequirements() {};
-    NVIGI_UID(UID({ 0xc1850ac2, 0xac46, 0x4e4b,{0xa2, 0xfa, 0x45, 0x1b, 0x5a, 0xc3, 0xe9, 0x05} }), kStructVersion1)
-    CommonCapabilitiesAndRequirements* common;
+// ============================================================================
+// Capabilities and Requirements
+// ============================================================================
+// IMPORTANT: DO NOT DUPLICATE GUIDs - ALWAYS ASSIGN NEW GUID
+//
+// TODO: Replace this GUID with a new one
+struct alignas(8) TemplateAICapabilitiesAndRequirements
+{
+    TemplateAICapabilitiesAndRequirements() = default;
+    NVIGI_UID(UID({ 0x33333333, 0x4444, 0x5555, {0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd} }), kStructVersion1)
+
+    // Pointer to common capabilities and requirements
+    CommonCapabilitiesAndRequirements* common = nullptr;
+
+    // Plugin-specific capabilities can be added here
+    // Example:
+    // bool supportsStreaming = false;
+    // uint32_t maxBatchSize = 1;
 };
 
-NVIGI_VALIDATE_STRUCT(TemplateInferCapabilitiesAndRequirements)
+NVIGI_VALIDATE_STRUCT(TemplateAICapabilitiesAndRequirements)
 
-//! Template interface
-//! 
-//! IMPORTANT: DO NOT DUPLICATE GUIDs - WHEN CLONING AND REUSING STRUCTURES ALWAYS ASSIGN NEW GUID
-//! 
-//! Run .\tools\nvigi.tool.utils.exe --interface MyInterfaceName and paste new structs here, delete below templates as needed
-//! 
-//! {7D1DC21C-DD50-4D29-B548-CD099BDE3A97}
-struct alignas(8) ITemplateInfer {
-    ITemplateInfer() {};
-    NVIGI_UID(UID({ 0x7d1dc21c, 0xdd50, 0x4d29,{0xb5, 0x48, 0xcd, 0x09, 0x9b, 0xde, 0x3a, 0x97} }), kStructVersion1)
+using ITemplateAI = InferenceInterface;
 
-    //! Creates new instance
-    //!
-    //! Call this method to create instance for the GPT model
-    //! 
-    //! @param params Reference to the GPT setup parameters
-    //! @param instance Returned new instance (null on error)
-    //! @return nvigi::kResultOk if successful, error code otherwise (see nvigi_result.h for details)
-    //!
-    //! This method is NOT thread safe.
-    nvigi::Result(*createInstance)(const nvigi::TemplateInferCreationParameters& params, nvigi::InferenceInstance** instance);
-
-    //! Destroys existing instance
-    //!
-    //! Call this method to destroy an existing GPT instance
-    //! 
-    //! @param instance Instance to destroy (ok to destroy null instance)
-    //! @return nvigi::kResultOk if successful, error code otherwise (see nvigi_result.h for details)
-    //!
-    //! This method is NOT thread safe.
-    nvigi::Result(*destroyInstance)(const nvigi::InferenceInstance* instance);
-
-    //! Returns model information
-    //!
-    //! Call this method to find out about the available models and their capabilities and requirements.
-    //! 
-    //! @param modelInfo Pointer to structure containing supported model information
-    //! @param params Optional pointer to the setup parameters (can be null)
-    //! @return nvigi::kResultOk if successful, error code otherwise (see nvigi_result.h for details)
-    //!
-    //! This method is NOT thread safe.
-    nvigi::Result (*getCapsAndRequirements)(nvigi::TemplateInferCapabilitiesAndRequirements* modelInfo, const nvigi::TemplateInferCreationParameters* params);
-
-    //! NEW MEMBERS GO HERE, BUMP THE VERSION!    
-};
-
-NVIGI_VALIDATE_STRUCT(ITemplateInfer)
-
-}
+} // namespace nvigi

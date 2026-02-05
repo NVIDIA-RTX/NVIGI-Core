@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -6,6 +6,7 @@
 // Prevent warnings from MS headers
 #define WIN32_NO_STATUS
 #include <windows.h>
+#include <intrin.h>
 #undef WIN32_NO_STATUS
 #include <ntstatus.h>
 #include <Winternl.h>
@@ -20,6 +21,7 @@
 #include <regex>
 #include <sys/utsname.h>
 #endif
+#include <bitset>
 
 #include "source/core/nvigi.system/system.h"
 #include "source/core/nvigi.log/log.h"
@@ -61,6 +63,162 @@ struct Privileges
     bool ranOnce = false;
 };
 static Privileges s_privileges{};
+
+//! Based on https://learn.microsoft.com/en-us/cpp/intrinsics/cpuid-cpuidex?view=msvc-170
+//! 
+class InstructionSet
+{
+    // forward declarations
+    class InstructionSet_Internal;
+
+public:
+    // getters
+    static std::string Vendor(void) { return CPU_Rep.vendor_; }
+    static std::string Brand(void) { return CPU_Rep.brand_; }
+
+#define check_for_cpu_cap(name) (name() ? SystemFlags::e##name : SystemFlags::eNone)
+
+    static SystemFlags GetFlags()
+    {
+        return check_for_cpu_cap(SSE3)
+            | check_for_cpu_cap(SSSE3)
+            | check_for_cpu_cap(SSE41)
+            | check_for_cpu_cap(SSE42)
+            | check_for_cpu_cap(AVX)
+            | check_for_cpu_cap(MMX)
+            | check_for_cpu_cap(SSE)
+            | check_for_cpu_cap(SSE2)
+            | check_for_cpu_cap(AVX2)
+            | check_for_cpu_cap(SSE4a);
+    }
+
+#undef check_for_cpu_cap
+
+    static bool SSE3(void) { return CPU_Rep.f_1_ECX_[0]; }
+    static bool SSSE3(void) { return CPU_Rep.f_1_ECX_[9]; }
+    static bool SSE41(void) { return CPU_Rep.f_1_ECX_[19]; }
+    static bool SSE42(void) { return CPU_Rep.f_1_ECX_[20]; }
+    static bool AVX(void) { return CPU_Rep.f_1_ECX_[28]; }
+    static bool MMX(void) { return CPU_Rep.f_1_EDX_[23]; }
+    static bool SSE(void) { return CPU_Rep.f_1_EDX_[25]; }
+    static bool SSE2(void) { return CPU_Rep.f_1_EDX_[26]; }
+    static bool AVX2(void) { return CPU_Rep.f_7_EBX_[5]; }
+    static bool SSE4a(void) { return CPU_Rep.isAMD_ && CPU_Rep.f_81_ECX_[6]; }
+
+
+private:
+    static const InstructionSet_Internal CPU_Rep;
+
+    class InstructionSet_Internal
+    {
+    public:
+        InstructionSet_Internal()
+            : nIds_{ 0 },
+            nExIds_{ 0 },
+            isIntel_{ false },
+            isAMD_{ false },
+            f_1_ECX_{ 0 },
+            f_1_EDX_{ 0 },
+            f_7_EBX_{ 0 },
+            f_7_ECX_{ 0 },
+            f_81_ECX_{ 0 },
+            f_81_EDX_{ 0 },
+            data_{},
+            extdata_{}
+        {
+            std::array<int, 4> cpui;
+
+            // Calling __cpuid with 0x0 as the function_id argument
+            // gets the number of the highest valid function ID.
+            __cpuid(cpui.data(), 0);
+            nIds_ = cpui[0];
+
+            for (int i = 0; i <= nIds_; ++i)
+            {
+                __cpuidex(cpui.data(), i, 0);
+                data_.push_back(cpui);
+            }
+
+            // Capture vendor string
+            char vendor[0x20];
+            memset(vendor, 0, sizeof(vendor));
+            *reinterpret_cast<int*>(vendor) = data_[0][1];
+            *reinterpret_cast<int*>(vendor + 4) = data_[0][3];
+            *reinterpret_cast<int*>(vendor + 8) = data_[0][2];
+            vendor_ = vendor;
+            if (vendor_ == "GenuineIntel")
+            {
+                isIntel_ = true;
+            }
+            else if (vendor_ == "AuthenticAMD")
+            {
+                isAMD_ = true;
+            }
+
+            // load bitset with flags for function 0x00000001
+            if (nIds_ >= 1)
+            {
+                f_1_ECX_ = data_[1][2];
+                f_1_EDX_ = data_[1][3];
+            }
+
+            // load bitset with flags for function 0x00000007
+            if (nIds_ >= 7)
+            {
+                f_7_EBX_ = data_[7][1];
+                f_7_ECX_ = data_[7][2];
+            }
+
+            // Calling __cpuid with 0x80000000 as the function_id argument
+            // gets the number of the highest valid extended ID.
+            __cpuid(cpui.data(), 0x80000000);
+            nExIds_ = cpui[0];
+
+            char brand[0x40];
+            memset(brand, 0, sizeof(brand));
+
+            for (int i = 0x80000000; i <= nExIds_; ++i)
+            {
+                __cpuidex(cpui.data(), i, 0);
+                extdata_.push_back(cpui);
+            }
+
+            // load bitset with flags for function 0x80000001
+            if (nExIds_ >= 0x80000001)
+            {
+                f_81_ECX_ = extdata_[1][2];
+                f_81_EDX_ = extdata_[1][3];
+            }
+
+            // Interpret CPU brand string if reported
+            if (nExIds_ >= 0x80000004)
+            {
+                memcpy(brand, extdata_[2].data(), sizeof(cpui));
+                memcpy(brand + 16, extdata_[3].data(), sizeof(cpui));
+                memcpy(brand + 32, extdata_[4].data(), sizeof(cpui));
+                brand_ = brand;
+            }
+        };
+
+        int nIds_;
+        int nExIds_;
+        std::string vendor_;
+        std::string brand_;
+        bool isIntel_;
+        bool isAMD_;
+        std::bitset<32> f_1_ECX_;
+        std::bitset<32> f_1_EDX_;
+        std::bitset<32> f_7_EBX_;
+        std::bitset<32> f_7_ECX_;
+        std::bitset<32> f_81_ECX_;
+        std::bitset<32> f_81_EDX_;
+        std::vector<std::array<int, 4>> data_;
+        std::vector<std::array<int, 4>> extdata_;
+    };
+};
+
+// Initialize static member data
+const InstructionSet::InstructionSet_Internal InstructionSet::CPU_Rep;
 
 bool isProcessRunningAsAdmin() {
     BOOL isAdmin = FALSE;
@@ -562,14 +720,52 @@ bool getSystemCaps(nvigi::VendorId forceAdapterId, uint32_t forceArchitecture, S
                         // compute a very crude estimate of GFLOPs by assuming we can do an FMAD/clk/core
                         NvU32 coreCount;
                         NVAPI_VALIDATE_RF(NvAPI_GPU_GetGpuCoreCount(nvGPUHandle[gpu], &coreCount));
-                        adapter->shaderGFLOPS = (float)clkFreqs.domain[NVAPI_GPU_PUBLIC_CLOCK_GRAPHICS].frequency * coreCount * 2.0f / 1000000.0f;
+                        adapter->coreCount = (uint32_t)coreCount;
+                        adapter->shaderGFLOPS = (float)clkFreqs.domain[NVAPI_GPU_PUBLIC_CLOCK_GRAPHICS].frequency * adapter->coreCount * 2.0f / 1000000.0f;
 
+                        // SM count (Shader SubPipes)
+                        NvU32 smCount{};
+                        if (NvAPI_GPU_GetShaderSubPipeCount(nvGPUHandle[gpu], &smCount) == NVAPI_OK)
+                        {
+                            adapter->smCount = smCount;
+                        }
+
+                        // RT and Tensor cores
+                        NV_GPU_INFO gpuInfo{};
+                        gpuInfo.version = NV_GPU_INFO_VER;
+                        if (NvAPI_GPU_GetGPUInfo(nvGPUHandle[gpu], &gpuInfo) == NVAPI_OK)
+                        {
+                            adapter->rtCoreCount = gpuInfo.rayTracingCores;
+                            adapter->tensorCoreCount = gpuInfo.tensorCores;
+                        }
+
+                        // Store clock frequencies in MHz
+                        adapter->graphicsBoostClockMHz = clkFreqs.domain[NVAPI_GPU_PUBLIC_CLOCK_GRAPHICS].frequency / 1000;
+                        adapter->memoryClockMHz = clkFreqs.domain[NVAPI_GPU_PUBLIC_CLOCK_MEMORY].frequency / 1000;
+
+                        // PCIe width
+                        NvU32 pcieWidth{};
+                        if (NvAPI_GPU_GetCurrentPCIEDownstreamWidth(nvGPUHandle[gpu], &pcieWidth) == NVAPI_OK)
+                        {
+                            adapter->pcieWidth = pcieWidth;
+                        }
+
+                        // Memory bus width (already queried above for bandwidth calculation)
+                        adapter->memoryBusWidthBits = busWidth;
 
                         NVIGI_LOG_INFO("Found adapter '%s':", adapter->description.c_str());
                         NVIGI_LOG_INFO("# LUID: %u.%u", adapter->id.HighPart, adapter->id.LowPart);
                         NVIGI_LOG_INFO("# arch: 0x%x", adapter->architecture);
                         NVIGI_LOG_INFO("# impl: 0x%x", adapter->implementation);
                         NVIGI_LOG_INFO("# rev: 0x%x", adapter->revision);
+                        NVIGI_LOG_INFO("# cores: %u", adapter->coreCount);
+                        NVIGI_LOG_INFO("# sm count: %u", adapter->smCount);
+                        NVIGI_LOG_INFO("# rt cores: %u", adapter->rtCoreCount);
+                        NVIGI_LOG_INFO("# tensor cores: %u", adapter->tensorCoreCount);
+                        NVIGI_LOG_INFO("# graphics boost clock: %u MHz", adapter->graphicsBoostClockMHz);
+                        NVIGI_LOG_INFO("# memory clock: %u MHz", adapter->memoryClockMHz);
+                        NVIGI_LOG_INFO("# PCIe width: x%u", adapter->pcieWidth);
+                        NVIGI_LOG_INFO("# mem bus width: %u bits", adapter->memoryBusWidthBits);
                         NVIGI_LOG_INFO("# mem GBPS: %.2f", adapter->memoryBandwidthGBPS);
                         NVIGI_LOG_INFO("# shader GFLOPS: %.2f", adapter->shaderGFLOPS);
                         NVIGI_LOG_INFO("# driver: %u.%u", info->driverVersion.major, info->driverVersion.minor);
@@ -732,6 +928,9 @@ bool getSystemCaps(nvigi::VendorId forceAdapterId, uint32_t forceArchitecture, S
             NVIGI_LOG_INFO("Adapter count will be forced to 1");
         }
     }
+#ifdef NVIGI_WINDOWS
+    info->flags |= InstructionSet::GetFlags();
+#endif
 
     s_caps = *info;
     return true;

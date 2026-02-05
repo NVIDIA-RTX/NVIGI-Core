@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -47,6 +47,21 @@ constexpr uint32_t kResultNoImplementation = 16 << 24;
 constexpr uint32_t kResultItemNotFound = 17 << 24;
 constexpr uint32_t kResultTimedOut = 18 << 24;
 
+//! POSIX errno-style common error codes
+constexpr uint32_t kResultPermissionDenied = 19 << 24;     //!< EACCES - Permission denied
+constexpr uint32_t kResultAlreadyExists = 20 << 24;        //!< EEXIST - File/resource already exists
+constexpr uint32_t kResultIOError = 21 << 24;              //!< EIO - Input/output error
+constexpr uint32_t kResultNoSpace = 22 << 24;              //!< ENOSPC - No space left on device
+constexpr uint32_t kResultReadOnly = 23 << 24;             //!< EROFS - Read-only file system/resource
+constexpr uint32_t kResultBusy = 24 << 24;                 //!< EBUSY - Resource busy
+constexpr uint32_t kResultOutOfRange = 25 << 24;           //!< ERANGE - Value out of range
+constexpr uint32_t kResultWouldBlock = 26 << 24;           //!< EAGAIN - Resource temporarily unavailable, try again
+constexpr uint32_t kResultInterrupted = 27 << 24;          //!< EINTR - Operation interrupted
+constexpr uint32_t kResultCanceled = 28 << 24;             //!< ECANCELED - Operation canceled
+constexpr uint32_t kResultConnectionRefused = 29 << 24;    //!< ECONNREFUSED - Connection refused
+constexpr uint32_t kResultNetworkUnreachable = 30 << 24;   //!< ENETUNREACH - Network unreachable
+constexpr uint32_t kResultEndOfFile = 31 << 24;            //!< EOF - End of file/stream reached
+
 //! Convert a result code to a human-readable string name
 //!
 //! @param result The result code to convert
@@ -78,6 +93,19 @@ inline const char* resultToString(Result result)
         case 16: return "NoImplementation";
         case 17: return "ItemNotFound";
         case 18: return "TimedOut";
+        case 19: return "PermissionDenied";
+        case 20: return "AlreadyExists";
+        case 21: return "IOError";
+        case 22: return "NoSpace";
+        case 23: return "ReadOnly";
+        case 24: return "Busy";
+        case 25: return "OutOfRange";
+        case 26: return "WouldBlock";
+        case 27: return "Interrupted";
+        case 28: return "Canceled";
+        case 29: return "ConnectionRefused";
+        case 30: return "NetworkUnreachable";
+        case 31: return "EndOfFile";
         default: return "Unknown";
     }
 }
@@ -113,6 +141,19 @@ inline const char* resultToExplanation(Result result)
         case 16: return "The requested functionality has not been implemented yet";
         case 17: return "The requested item or resource was not found";
         case 18: return "The operation did not complete within the specified timeout period";
+        case 19: return "Permission denied. The operation requires elevated privileges or access rights";
+        case 20: return "The file or resource already exists";
+        case 21: return "An input/output error occurred during the operation";
+        case 22: return "No space left on device or storage quota exceeded";
+        case 23: return "The file system or resource is read-only";
+        case 24: return "The resource is currently busy or locked by another operation";
+        case 25: return "A value is out of the valid range or would cause overflow";
+        case 26: return "The operation would block. Resource temporarily unavailable, try again";
+        case 27: return "The operation was interrupted before completion";
+        case 28: return "The operation was canceled by request";
+        case 29: return "Connection refused by the remote host";
+        case 30: return "The network is unreachable";
+        case 31: return "End of file or stream reached";
         default: return "Unknown result code. This may be a plugin-specific error";
     }
 }

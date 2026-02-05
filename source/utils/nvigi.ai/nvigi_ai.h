@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -28,17 +28,24 @@ constexpr InferenceExecutionState kInferenceExecutionStateInvalid = 0 << 24;    
 constexpr InferenceExecutionState kInferenceExecutionStateDone = 1 << 24;        // All done, no more data expected
 constexpr InferenceExecutionState kInferenceExecutionStateCancel = 2 << 24;      // Canceled by the host
 constexpr InferenceExecutionState kInferenceExecutionStateDataPending = 3 << 24; // Final data but more data expected
-constexpr InferenceExecutionState kInferenceExecutionStateDataPartial = 4 << 24; // Partial data, subject to change, more partial or final data is expected, see below for more details
+constexpr InferenceExecutionState kInferenceExecutionStateDataPartial = 4 << 24; // Partial data, subject to change. This data may be replaced/corrected in subsequent callbacks.
+                                                                                   // For example, in ASR as more speech is processed, the context can change allowing the model 
+                                                                                   // to "correct" itself, replacing partial data with updated partial or pending data.
 
-//! NOTE: Careful consideration should be taken when receiving partial data, for example here is one possible sequence:
+//! NOTE: Careful consideration should be taken when receiving partial data.
 //! 
-//! [] A1 : Partial
-//! [] A2 : Pending
-//! [A2] B1 : Pending
-//! [A2 B1] C1 : Partial
-//! [A2 B1] C2 : Partial
-//! [A2 B1] C3 : Pending
-//! [A2 B1 C3] D1 : Done
+//! DataPartial indicates that the provided output is tentative and may be replaced or corrected as more input is processed.
+//! DataPending indicates that the provided output is final and will not change, but more outputs are expected.
+//! 
+//! Example sequence showing how partial data can be replaced:
+//! 
+//! [] A1 : Partial       // "Hello" - tentative transcription
+//! [] A2 : Pending       // "Hello" - confirmed, won't change
+//! [A2] B1 : Pending     // "Hello world" - "world" is confirmed
+//! [A2 B1] C1 : Partial  // "Hello world how" - "how" is tentative
+//! [A2 B1] C2 : Partial  // "Hello world hi" - "how" was corrected to "hi"
+//! [A2 B1] C3 : Pending  // "Hello world hi" - "hi" is now confirmed
+//! [A2 B1 C3] D1 : Done  // Complete transcription
 
 //! Available backends, features could support only one or any combination
 enum class InferenceBackendLocations : uint32_t

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: Copyright (c) 2024-2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: MIT
 //
 
@@ -141,7 +141,17 @@ NVIGI_VALIDATE_STRUCT(PluginSpec)
 enum class SystemFlags : uint64_t
 {
     eNone = 0x00,
-    eHWSchedulingEnabled = 0x01
+    eHWSchedulingEnabled = 0x01,
+    eSSE = 1ull << 1,
+    eSSE2 = 1ull << 2,
+    eSSE3 = 1ull << 3,
+    eSSSE3 = 1ull << 4,
+    eSSE4a = 1ull << 5,
+    eSSE41 = 1ull << 6,
+    eSSE42 = 1ull << 7,
+    eAVX = 1ull << 8,
+    eAVX2 = 1ull << 9,
+    eMMX = 1ull << 10,
 };
 
 NVIGI_ENUM_OPERATORS_64(SystemFlags);
