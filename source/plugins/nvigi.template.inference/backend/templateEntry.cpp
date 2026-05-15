@@ -45,6 +45,7 @@
 // Core Includes
 // ============================================================================
 #include "nvigi.h"
+#include "nvigi_io.h"
 #include "nvigi.api/internal.h"
 #include "nvigi.log/log.h"
 #include "nvigi.exception/exception.h"
@@ -326,23 +327,59 @@ public:
             // bool enableOptimization = extendedParams->enableOptimization;
         }
 
-        // Find model files using the model GUID and expected file extensions
-        // The framework will look in common->utf8PathToModels for files matching the GUID
+        // Unified model discovery - handles ALL three approaches automatically!
+        // Just pass FileIOCallbacks and ai::findModels() does the rest
+        auto ioCallbacks = findStruct<FileIOCallbacks>(params);
         auto& ctx = ModernPluginBase<TemplateAIPlugin, ITemplateAI>::getContext();
-        if (ctx.modelInfo.empty()) {
-            // Replace "gguf" with your model's file extensions (e.g., "bin", "safetensors", etc.)
-            if (!ai::findModels(common, {"my_ext1", "my_ext2" }, ctx.modelInfo)) {
+        
+        // Call unified findModels - it detects which approach to use based on parameters
+        // - Approach 3: ioCallbacks provided → uses modelCardJSON directly
+        // - Approach 2: no callbacks, JSON has local_files → uses those file names
+        // - Approach 1: no callbacks, JSON lacks local_files → scans by extension
+        json modelInfo;
+        {
+            // Replace "my_ext1", "my_ext2" with your model's file extensions (e.g., "gguf", "bin", "safetensors", etc.)
+            if (!ai::findModels(common, {"my_ext1", "my_ext2"}, modelInfo, ioCallbacks)) {
                 return std::unexpected(Error{
                     kResultInvalidParameter,
-                    "Failed to find model files"
+                    "Failed to find model files - check logs for details"
                 });
             }
         }
 
-        // Extract model file paths
+        // Extract model file paths and card
+        // For Approach 3 (callbacks), the key is "ai::kSyntheticKey"
+        // For Approach 1 & 2 (filesystem), the key is the GUID
+        std::string modelKey = ioCallbacks ? ai::kSyntheticKey : (common->modelGUID ? common->modelGUID : "");
+        if(modelKey.empty()) {
+            return std::unexpected(Error{
+                kResultInvalidParameter,
+                "Model GUID must be provided in CommonCreationParameters for filesystem-based discovery"
+            });
+        }
+
         std::vector<std::string> files;
+        json modelCard;
+        
         try {
-            files = ctx.modelInfo[common->modelGUID]["my_ext1"];
+            // Get model card
+            if (!modelInfo.contains(modelKey)) {
+                return std::unexpected(Error{
+                    kResultInvalidParameter,
+                    "Model not found in discovered models"
+                });
+            }
+            
+            modelCard = modelInfo[modelKey];
+            
+            // Get file list (check first extension that has files)
+            for (const auto& ext : {"my_ext1", "my_ext2"}) {
+                if (modelInfo[modelKey].contains(ext) && 
+                    !modelInfo[modelKey][ext].empty()) {
+                    files = modelInfo[modelKey][ext];
+                    break;
+                }
+            }
         } catch (const std::exception& e) {
             return std::unexpected(Error{
                 kResultJSONException,
@@ -353,12 +390,12 @@ public:
         if (files.empty()) {
             return std::unexpected(Error{
                 kResultInvalidParameter,
-                "No model files found for GUID: " + std::string(common->modelGUID)
+                "No model files found"
             });
         }
 
         std::string pathToModel = files[0];
-        NVIGI_LOG_INFO("Loading model '%s'", pathToModel.c_str());
+        NVIGI_LOG_INFO("Loading model from '%s'", pathToModel.c_str());
 
         // Create instance context (use shared_ptr for automatic lifetime management)
         // IMPORTANT: Pass params to constructor for CUDA context initialization
@@ -408,6 +445,42 @@ public:
         //     return std::unexpected(Error{kResultInvalidState, "Failed to initialize model"});
         // }
 #endif
+
+        // If using IO callbacks, load model files through callbacks instead of standard file I/O
+        // This allows host to provide custom file handling (encryption, compression, virtual filesystems, etc.)
+        if (ioCallbacks) {
+            NVIGI_LOG_INFO("Loading model '%s' using FileIOCallbacks", pathToModel.c_str());
+            
+            // Example: Load model file(s) using callbacks
+            auto handle = ioCallbacks->open(ioCallbacks->userData, pathToModel.c_str(), "rb");
+            if (!handle) {
+                 return std::unexpected(Error{kResultInvalidParameter, "Failed to open model file via callbacks"});
+            }
+            size_t size = ioCallbacks->size(ioCallbacks->userData, handle);
+            std::vector<char> buffer(size);
+            size_t bytesRead = ioCallbacks->read(ioCallbacks->userData, handle, buffer.data(), size);
+            ioCallbacks->close(ioCallbacks->userData, handle);
+             
+            if (bytesRead != size) {
+                return std::unexpected(Error{kResultInvalidParameter, "Failed to read complete model file"});
+            }
+             
+            // // Load model from buffer
+            // state->model = your_model_init_from_buffer(buffer.data(), buffer.size());
+            // if (!state->model) {
+            //     return std::unexpected(Error{kResultInvalidState, "Failed to initialize model from buffer"});
+            // }
+        }
+        else {
+            // No callbacks - use standard file I/O from disk path
+            NVIGI_LOG_INFO("Loading model '%s' using standard file I/O", pathToModel.c_str());
+            
+            // Example: Load model from disk
+            // state->model = your_model_init_from_file(pathToModel.c_str());
+            // if (!state->model) {
+            //     return std::unexpected(Error{kResultInvalidState, "Failed to initialize model from file"});
+            // }
+        }
 
         state->isInitialized = true;
 

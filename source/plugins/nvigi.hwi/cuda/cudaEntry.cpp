@@ -360,10 +360,9 @@ Result nvigiPluginGetInfo(nvigi::framework::IFramework* framework, nvigi::plugin
         }     
     }
 
-    if (hasNVAdapter && !(system->getSystemCaps()->flags & nvigi::SystemFlags::eHWSchedulingEnabled))
+    if (hasNVAdapter)
     {
-        NVIGI_LOG_ERROR("HW scheduling in OS must be enabled in order for 'nvigi.plugin.hwi.cuda' to operate correctly");
-        return kResultInvalidState;
+        info.minSystemFlags |= SystemFlags::eHWSchedulingEnabled;
     }
     (*hwiCuda::getContext()).driverVersion = system->getSystemCaps()->driverVersion;
     return kResultOk;

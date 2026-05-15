@@ -10,72 +10,71 @@ import stat
 import sys
 import nvigi_utils as utils
 
-nlohmann_json_ext = {"dep":"nlohmann_json", "path":"external/json",
-                           "items":[{"name":"nlohmann_json", "version":"3.10.5.1-b440a32a-windows-x86_64","platforms":"windows-x86_64"}]
-                          }
+nlohmann_json_ext = [{"dep":"nlohmann_json", "target":"all", "path":"external/json",
+                           "name":"nlohmann_json", "version":"3.10.5.1-b440a32a-windows-x86_64","host_platform":"windows-x86_64"},
+]
 
-catch2_ext = {"dep":"catch2", "path":"external/catch2",
-                           "items":[{"name":"catch2", "version":"2.13.9-7011809a","platforms":"windows-x86_64"}]
-                          }
+catch2_ext = [{"dep":"catch2", "target":"all", "path":"external/catch2",
+                    "name":"catch2", "version":"2.13.9-7011809a","host_platform":"windows-x86_64"},
+]
 
-cuda_ext = {"dep":"cuda", "path":"external/cuda", 
-                           "items":[{"name":"cuda", "version":"v12.8.0-windows-x64","platforms":"windows-x86_64"}]
-                          }
+cuda_ext =[{"dep":"cuda", "target":"win-x64", "path":"external/cuda", 
+                 "name":"cuda", "version":"v12.8.0-windows-x64","host_platform":"windows-x86_64"},
+]
 
-cig_scheduler_settings_ext = {"dep":"cig_scheduler_settings", "path":"external/cig_scheduler_settings", 
-                           "items":[{"name":"cig_scheduler_settings_win64", "version":"202507021723-ac549a08-main","platforms":"windows-x86_64"}]
-                          }
+cig_scheduler_settings_ext = [{"dep":"cig_scheduler_settings", "target":"win-x64", "path":"external/cig_scheduler_settings", 
+                           "name":"cig_scheduler_settings_win64", "version":"202603161727-a5f373c0-main","host_platform":"windows-x86_64"},
+]
 
-nvapi_ext = {"dep":"nvapi", "path":"external/nvapi", 
-                           "items":[{"name":"nvapi", "version":"r575-public-windows-x86_64","platforms":"windows-x86_64"}]
-                          }
+nvapi_ext = [{"dep":"nvapi", "target":"win-x64", "path":"external/nvapi", 
+                   "name":"nvapi", "version":"r575-public-windows-x86_64","host_platform":"windows-x86_64"},
+]
 
-agility_sdk_ext = {"dep":"agility-sdk-code", "path":"external/agility-sdk",
-                            "items":[{"name":"agility-sdk-code", "version":"1.615.1-x64-windows","platforms":"windows-x86_64"}]
-                    }
+agility_sdk_ext = [{"dep":"agility-sdk-code", "target":"all", "path":"external/agility-sdk",
+                         "name":"agility-sdk-code", "version":"1.615.1-x64-windows","host_platform":"windows-x86_64"},
+]
 
-amd_ags_ext = {"dep":"amd-ags", "path":"external/amd-ags",
-                            "items":[{"name":"amd-ags", "version":"6.2.0-x64-windows","platforms":"windows-x86_64"}]
-                    }
+amd_ags_ext = [{"dep":"amd-ags", "target":"all", "path":"external/amd-ags",
+                     "name":"amd-ags", "version":"6.2.0-x64-windows","host_platform":"windows-x86_64"},
+]
 
-vulkan_ext = {"dep":"vulkansdk", "path":"external/vulkanSDK",
-                           "items":[{"name":"vulkansdk", "version":"1.4.321.1-windows-x86_64","platforms":"windows-x86_64"}]
-}
+vulkan_ext = [
+    {"dep":"vulkansdk", "target":"win-x64", "path":"external/vulkanSDK",
+                           "name":"vulkansdk", "version":"1.4.321.1-windows-x86_64","host_platform":"windows-x86_64"},
+]
 
-curl_ext = {"dep":"libcurl", "path":"external/libcurl",
-                           "items":[{"name":"libcurl", "version":"7.80.0+nv1-windows-x86_64","platforms":"windows-x86_64"},
-                                    {"name":"libcurl", "version":"8.1.2-3-linux-x86_64-static-release","platforms":"linux-x86_64"}
-                                   ]
-                          }
+curl_ext = [{"dep":"libcurl", "target":"win-x64", "path":"external/libcurl",
+                  "name":"libcurl", "version":"7.80.0+nv1-windows-x86_64","host_platform":"windows-x86_64"},
+]
 
-zlib_ext = {"dep":"zlib", "path":"external/zlib",
-                           "items":[{"name":"zlib", "version":"1.3.1_x64-windows","platforms":"windows-x86_64"},
-                                    {"name":"zlib", "version":"1.3.1_x64-linux","platforms":"linux-x86_64"}
-                                   ]
-                          }
+zlib_ext = [{"dep":"zlib", "target":"win-x64", "path":"external/zlib",
+                  "name":"zlib", "version":"1.3.1_x64-windows","host_platform":"windows-x86_64"},
+]
 
-cuda12dlls = {'win-x64':[
-    'external/cuda/bin/cudart64_12.dll'
-    ]
+cudaDlls = {'win-x64':[ 'external/cuda/bin/cudart64_12.dll' ],
 }
 
 cuptiDlls =  {'win-x64':[
     'external/cuda/extras/CUPTI/lib64/cupti64_2025.1.0.dll',
-    'external/cig_scheduler_settings/bin/Release_x64/cig_scheduler_settings.dll'],
+    'external/cig_scheduler_settings/bin/x64/Release/cig_scheduler_settings.dll'],
 }
 
 amd_agsDll =  {'win-x64':[
     'external/amd-ags/ags_lib/lib/amd_ags_x64.dll'],
 }
-    
+
 net_dlls = {'win-x64':[
     'external/zlib/debug/bin/zlibd1.dll', 
     'external/zlib/bin/zlib1.dll', # add release since some 3rd party stuff only ships as release
 ],
 }
 
-all_plat = ['win-x64']
-plat_suffixes = {'win-x64':'x64'}
+all_plat = [
+    'win-x64',
+    ]
+arch_suffixes = {
+    'win-x64':'x64',
+}
 
 all_components = {
     'core.framework': {
@@ -87,7 +86,7 @@ all_components = {
         'runtime_sources': ['utils/nvigi.cig_compatibility_checker', 'utils/nvigi.dsound', 'utils/nvigi.wav'],
         'premake': 'source/core/premake.lua',
         '3rdparty': amd_agsDll,
-        'docs': ['Architecture.md', 'PluginDevelopmentGuide.md', 'PluginDevelopmentTutorial.md', 'GpuSchedulingForAI.md', 'HybridAI.md', 'ProgrammingGuide.md', 'ProgrammingGuideAI.md'],
+        'docs': ['Architecture.md', 'PluginDevelopmentGuide.md', 'PluginDevelopmentTutorial.md', 'GpuSchedulingForAI.md', 'RunningOnMultipleGPUs.md', 'HybridAI.md', 'ProgrammingGuide.md', 'ProgrammingGuideAI.md', 'IntegrationTutorial.md', 'ProgrammingGuideCloudSecurity.md', 'llamacpp_CIG_patch.md'],
         'externals': [agility_sdk_ext, amd_ags_ext, nlohmann_json_ext, nvapi_ext]
     },
     'plugin.hwi.common' : {
@@ -104,7 +103,7 @@ all_components = {
         'includes': ['source/plugins/nvigi.hwi/cuda/nvigi_hwi_cuda.h'],
         'sources': ['plugins/nvigi.hwi/cuda', 'shared'],
         'externals': [cuda_ext, cig_scheduler_settings_ext, vulkan_ext],
-        '3rdparty': cuda12dlls,
+        '3rdparty': cudaDlls,
         'premake': 'source/plugins/nvigi.hwi/cuda/premake.lua' 
     },
     'plugin.hwi.d3d12' : {
@@ -116,7 +115,7 @@ all_components = {
         'premake': 'source/plugins/nvigi.hwi/d3d12/premake.lua' 
     },
     'plugin.net': {
-        'platforms': all_plat,
+        'platforms': ['win-x64'],
         '3rdparty': net_dlls,
         'sharedlib': ['nvigi.plugin.net'],
         'includes': ['source/plugins/nvigi.net/nvigi_net.h'],
@@ -198,7 +197,7 @@ def ExtractCopySourcesList(component_list, component_names, category, platform=N
         component = component_list[name]
         if platform != None:
             if platform not in component['platforms']:
-                break
+                continue
         if category in component:
             for item in component[category]:
                 sources_list.append((item, name))
@@ -236,18 +235,24 @@ def ExtractCopySourcesListPlatformWithDest(component_list, component_names, cate
                         sources_list.append((item_path, name))
     return sources_list
 
-def ExtractPackmanItems(item, list_names, packman_items):
+def ExtractPackmanItems(item, list_names, platforms, packman_items):
     for list_name in list_names:
         if list_name in item:
-            for dep in item[list_name]:
-                duplicate = False
-                for existing_dep in packman_items:
-                    if dep["dep"] == existing_dep["dep"]:
-                        duplicate = True
-                        if dep != existing_dep:
-                            print(f'Conflicting packman dependencies: {dep["dep"]}')
-                if duplicate == False:
-                    packman_items.append(dep)
+            for dep_set in item[list_name]:
+                for platform in platforms+["all"]:
+                    for dep in dep_set:
+                        if dep["target"] == platform:
+                            duplicate = False
+                            for existing_dep in packman_items:
+                                if dep != existing_dep and dep["path"] == existing_dep["path"]:
+                                    print(f'Two packman deps map to the same path!: {dep} and {existing_dep}')
+                                    sys.exit(-1)
+                                if dep["dep"] == existing_dep["dep"]:
+                                    duplicate = True
+                                    if dep != existing_dep:
+                                        print(f'Conflicting packman dependencies: {dep["dep"]}')
+                            if duplicate == False:
+                                packman_items.append(dep)
     return packman_items
 
 def ExtPairCompare(a, b):
@@ -265,19 +270,18 @@ def WritePackman(externals, filename):
         print('<project toolsVersion="6.21">', file=f)
         for dep in sorted_externals:
             print(f'\t<dependency name="{dep["dep"]}" linkPath="{dep["path"]}">', file=f)
-            for item in dep["items"]:
-                if "version" in item:
-                    print(f'\t\t<package name="{item["name"]}" version="{item["version"]}" platforms="{item["platforms"]}"/>', file=f)
-                elif "path" in item:
-                    print(f'\t\t<source path="{item["path"]}" />', file=f)
+            if "version" in dep:
+                print(f'\t\t<package name="{dep["name"]}" version="{dep["version"]}" platforms="{dep["host_platform"]}"/>', file=f)
+            elif "path" in dep:
+                print(f'\t\t<source path="{dep["path"]}" />', file=f)
             print('\t</dependency>', file=f)
         print('</project>', file=f)
 
-def PackmanCreate(component_names, components, tags, filename):
+def PackmanCreate(component_names, components, tags, platforms, filename):
     externals = []
     for name in component_names:
         item = components[name]
-        externals = ExtractPackmanItems(item, tags, externals)
+        externals = ExtractPackmanItems(item, tags, platforms, externals)
     WritePackman(externals, filename)
 
 def WritePremake(premakes, filename):
@@ -322,17 +326,17 @@ def parse_args():
     default_config = 'pdk'
     parser.add_argument('-config',
                         dest='config', 
-                        choices=['runtime', 'runtime-sdk', 'int-relsigned', 'pdk', 'src'], # runtime, int-relsigned, and runtime-sdk are equivalent here
+                        choices=['runtime', 'pdk', 'src'],
                         help=f'Config {default_config}',
                         default=default_config)
     
-    parser.add_argument('-debug', '-Debug', 
+    parser.add_argument('-debug', 
                         dest='build_modes',action='append_const', const='Debug',
                         help=f'Package the debug config (default all configs)')
-    parser.add_argument('-production', '-Production', 
+    parser.add_argument('-production', 
                         dest='build_modes',action='append_const', const='Production',
                         help=f'Package the production config (default all configs)')
-    parser.add_argument('-release', '-Release', 
+    parser.add_argument('-release', 
                         dest='build_modes',action='append_const', const='Release',
                         help=f'Package the release config (default all configs)')
 
@@ -340,10 +344,11 @@ def parse_args():
                         dest='delete_sdk', action='store_false',
                         help=f'Skip deleting SDK')
 
-    parser.add_argument('-x64',
+    parser.add_argument('-x64', '--x64',
                         dest='platforms',
-                        help=f'Support x64',
+                        help=f'Support amd64',
                         action='append_const', const='win-x64')
+
 
     default_packman = ""
     parser.add_argument('-packman-only', 
@@ -364,10 +369,6 @@ if __name__ == '__main__':
     args = parse_args()
     dest_root = Path(f'{args.dest}')
 
-    # convert runtime-sdk and int-relsigned to runtime for packaging purposes
-    if args.config == 'runtime-sdk' or args.config == 'int-relsigned':
-        args.config = 'runtime'
-
     src=Path('.')
     dest_models=dest_root/'data/nvigi.models'
     dest_model_config=dest_root/'data/nvigi.models/configs'
@@ -381,6 +382,10 @@ if __name__ == '__main__':
 
     if args.platforms is None or len(args.platforms) == 0:
        args.platforms = ['win-x64']
+
+    if len(args.platforms) > 1:
+        print(f'Currently, only one platform can be configured at a time: specified platforms were {args.platforms}')
+        sys.exit(-1)
 
     print (f'Prepping/Packing platforms: {args.platforms}')
 
@@ -419,7 +424,7 @@ if __name__ == '__main__':
         # We ONLY add packman packages for internal-only packages to the local build files,
         # NOT the packaged project.xml.  This is important if the items are to be distributed
         # in the click-through licensed nvigi_pack, and NOT from public packman
-        PackmanCreate(component_names, all_components, ["externals", "externals_private"], args.packman_only)
+        PackmanCreate(component_names, all_components, ["externals", "externals_private"], args.platforms, args.packman_only)
         early_out = True
     
     if args.premake_only!="":
@@ -435,9 +440,9 @@ if __name__ == '__main__':
         copy_list += utils.CopySelect(src/'scripts'/scr, dest_root, component)
         if not args.source:
             for plat in args.platforms:
-                plat_suffix = plat_suffixes[plat]
+                plat_suffix = arch_suffixes[plat]
                 for config in config_list:
-                    dest_bin = dest_root/f'bin/{config}_{plat_suffix}'
+                    dest_bin = dest_root/f'bin/{plat_suffix}/{config}'
                     copy_list += utils.CopySelect(src/'scripts'/scr, dest_bin, component)
 
     # Models: Stage the copies
@@ -491,7 +496,7 @@ if __name__ == '__main__':
     else:
         # Platform and config-specific items: Stage the copies
         for platform in args.platforms:
-            plat_suffix = plat_suffixes[platform]
+            plat_suffix = arch_suffixes[platform]
             dlls = ExtractCopySourcesList(all_components, component_names, 'sharedlib', platform=platform)
             exes = ExtractCopySourcesList(all_components, component_names, 'exes', platform=platform)
             bin_extras = ExtractCopySourcesList(all_components, component_names, 'bin_extras', platform=platform)
@@ -499,29 +504,28 @@ if __name__ == '__main__':
             exts = ExtractCopySourcesListPlatformWithDest(all_components, component_names, '3rdparty_private', platform, src) + ExtractCopySourcesListPlatformWithDest(all_components, component_names, '3rdparty', platform, src)
 
             for config in config_list:
-                config_name = f'{config}_{plat_suffix}'
-                dest_bin = dest_root/f'bin/{config_name}'
-                dest_symbols = dest_root/f'symbols/{config_name}'
-                dest_lib = dest_root/f'lib/{config_name}'
+                dest_bin = dest_root/f'bin/{plat_suffix}/{config}'
+                dest_symbols = dest_root/f'symbols/{plat_suffix}/{config}'
+                dest_lib = dest_root/f'lib/{plat_suffix}/{config}'
 
                 for dll, component in dlls:
-                    copy_list.append((src/f'bin/{config_name}/{dll}.dll', dest_bin, component))
-                    copy_list.append((src/f'symbols/{config_name}/{dll}.pdb', dest_symbols, component))
+                    copy_list.append((src/f'bin/{plat_suffix}/{config}/{dll}.dll', dest_bin, component))
+                    copy_list.append((src/f'symbols/{plat_suffix}/{config}/{dll}.pdb', dest_symbols, component))
 
                 # EXEs (and Symbols): Stage the copies
                 for exe, component in exes:
-                    copy_list.append((src/f'bin/{config_name}/{exe}.exe', dest_bin, component))
-                    copy_list.append((src/f'symbols/{config_name}/{exe}.pdb', dest_symbols, component))
+                    copy_list.append((src/f'bin/{plat_suffix}/{config}/{exe}.exe', dest_bin, component))
+                    copy_list.append((src/f'symbols/{plat_suffix}/{config}/{exe}.pdb', dest_symbols, component))
 
                 # Bin Extras: Stage the copies
                 for pair, component in bin_extras:
-                    src_prefix = src/f'_artifacts/nvigi.{component}/{config_name}/{pair[0]}'
+                    src_prefix = src/f'_artifacts/nvigi.{component}/{plat_suffix}/{config}/{pair[0]}'
                     copy_list += utils.CopySelect(src_prefix, dest_bin/pair[1], component, prefix=src_prefix)
 
                 # libs: Stage the copies
                 for lib, component in libs:
-                    copy_list += utils.CopySelect(src/f'lib/{config_name}/{lib}.lib', dest_lib, component)
-                    copy_list += utils.CopySelect(src/f'lib/{config_name}/{lib}.exp', dest_lib, component)
+                    copy_list += utils.CopySelect(src/f'lib/{plat_suffix}/{config}/{lib}.lib', dest_lib, component)
+                    copy_list += utils.CopySelect(src/f'lib/{plat_suffix}/{config}/{lib}.exp', dest_lib, component)
 
                 # 3rd-party: Stage the copies
                 for ext, component in exts:
@@ -564,13 +568,18 @@ if __name__ == '__main__':
         copy_list.append((src/'build.bat', dest_root, 'all'))
         rename_list.append((src/'tools/packman/config.sdk.packman.xml', dest_root/'tools/packman/config.packman.xml', 'all'))
 
+    # Adding extras (for all types of packaging configurations)
+    copy_list.append((src/'extras/llamacpp_CIG_patch/llama.cpp_modifications.patch', dest_root/'extras/llamacpp_CIG_patch', 'all'))
+    copy_list.append((src/'extras/llamacpp_CIG_patch/README.txt', dest_root/'extras/llamacpp_CIG_patch', 'all'))
+    copy_list.append((src/'extras/llamacpp_CIG_patch/setup.bat', dest_root/'extras/llamacpp_CIG_patch', 'all'))
+
     # Perform the copies and renames based upon the staged lists
     [copied, total, renamed] = utils.DoCopy(copy_list, rename_list, dest_root)
 
     # Post-copy actions
     if args.config != 'runtime':
         PremakeCreate(source_components, all_components, dest_root/'premake.lua')
-        PackmanCreate(source_components, all_components, ["externals"], dest_root/'project.xml')
+        PackmanCreate(source_components, all_components, ["externals"], args.platforms, dest_root/'project.xml')
 
     # Make the copied headers, scripts and source read-only to make it more obvious they should not be edited
     ReadonlyTree(dest_root, True)

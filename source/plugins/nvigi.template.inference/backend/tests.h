@@ -8,6 +8,7 @@
 
 #include "source/plugins/nvigi.template.inference/nvigi_template_infer.h"
 #include "source/utils/nvigi.ai/ai_data_helpers.h"
+#include "source/core/nvigi.api/nvigi_io.h"
 
 namespace nvigi
 {
@@ -367,6 +368,263 @@ TEST_CASE("template_ai_cancel", "[template],[inference],[cpu],[cancel]")
     REQUIRE(unloadResult == nvigi::kResultOk);
 }
 
+//! Test new approach: IO callbacks with direct JSON card
+//! This demonstrates the modern way to load models without filesystem access
+TEST_CASE("template_ai_io_callbacks", "[template],[inference],[cpu],[callbacks]")
+{
+    nvigi::ITemplateAI* itemplate{};
+    auto loadResult = nvigiGetInterfaceDynamic(
+        plugin::template_ai::kId, 
+        &itemplate, 
+        params.nvigiLoadInterface
+    );
+    
+    REQUIRE(loadResult == nvigi::kResultOk);
+    REQUIRE(itemplate != nullptr);
+
+    NVIGI_LOG_TEST_INFO("Testing new approach: IO callbacks with direct JSON card...");
+    
+    // Simple mock file system for testing
+    struct MockFileSystem {
+        std::map<std::string, std::vector<uint8_t>> files;
+        
+        // Add a mock file
+        void addFile(const std::string& name, const std::string& content) {
+            files[name] = std::vector<uint8_t>(content.begin(), content.end());
+        }
+    };
+    
+    MockFileSystem mockFS;
+    
+    // Add mock model files
+    mockFS.addFile("my_model.my_ext1", "Mock model data for ext1");
+    mockFS.addFile("my_model.my_ext2", "Mock model data for ext2");
+    
+    // Setup FileIOCallbacks
+    FileIOCallbacks ioCallbacks{};
+    ioCallbacks.userData = &mockFS;
+    
+    // Open file callback
+    ioCallbacks.open = [](void* userData, const char* path, const char* mode) -> void* {
+        auto fs = (MockFileSystem*)userData;
+        auto it = fs->files.find(path);
+        if (it != fs->files.end()) {
+            NVIGI_LOG_TEST_VERBOSE("MockFS: Opening file '%s'", path);
+            return &it->second;  // Return pointer to file data
+        }
+        NVIGI_LOG_TEST_WARN("MockFS: File not found '%s'", path);
+        return nullptr;
+    };
+    
+    // Read file callback
+    ioCallbacks.read = [](void* userData, void* handle, void* buffer, size_t size) -> size_t {
+        auto data = (std::vector<uint8_t>*)handle;
+        size_t bytesToRead = std::min(size, data->size());
+        memcpy(buffer, data->data(), bytesToRead);
+        NVIGI_LOG_TEST_VERBOSE("MockFS: Read %zu bytes", bytesToRead);
+        return bytesToRead;
+    };
+    
+    // Size file callback
+    ioCallbacks.size = [](void* userData, void* handle) -> size_t {
+        auto data = (std::vector<uint8_t>*)handle;
+        return data->size();
+    };
+    
+    // Close file callback
+    ioCallbacks.close = [](void* userData, void* handle) {
+        NVIGI_LOG_TEST_VERBOSE("MockFS: Closing file");
+        // No-op for our simple mock
+    };
+    
+    // Prepare model card JSON (no filesystem paths needed!)
+    const char* modelCardJSON = R"({
+        "name": "template-test-model",
+        "vram": 1024,
+        "model": {
+            "ext": "my_ext1",
+            "notes": "Test model for IO callbacks - demonstrates Approach 3",
+            "local_files": [
+                "my_model.my_ext1",
+                "my_model.my_ext2"
+            ]
+        }
+    })";
+    
+    // Setup creation parameters with Approach 3 (Modern)
+    CommonCreationParameters common{};
+    common.modelCardJSON = modelCardJSON;  // Provide JSON directly
+    common.modelGUID = nullptr;            // Not needed with callbacks
+    common.utf8PathToModels = nullptr;     // Not needed with callbacks
+    common.numThreads = 1;
+    
+    // Chain IO callbacks
+    TemplateAICreationParameters templateParams{};
+    auto chainResult1 = templateParams.chain(common);
+    REQUIRE(chainResult1 == nvigi::kResultOk);
+    
+    auto chainResult2 = templateParams.chain(ioCallbacks);
+    REQUIRE(chainResult2 == nvigi::kResultOk);
+    
+    NVIGI_LOG_TEST_INFO("Testing instance creation with IO callbacks...");
+    
+    nvigi::InferenceInstance* instance = nullptr;
+    auto createResult = itemplate->createInstance(templateParams, &instance);
+    
+    if (createResult == nvigi::kResultOk && instance != nullptr)
+    {
+        NVIGI_LOG_TEST_INFO("Instance created successfully using Approach 3!");
+        NVIGI_LOG_TEST_INFO("This demonstrates the modern approach:");
+        NVIGI_LOG_TEST_INFO("  - ai::findModels() automatically detected Approach 3");
+        NVIGI_LOG_TEST_INFO("  - No filesystem access needed");
+        NVIGI_LOG_TEST_INFO("  - JSON card provided directly via modelCardJSON");
+        NVIGI_LOG_TEST_INFO("  - Files loaded via FileIOCallbacks");
+        NVIGI_LOG_TEST_INFO("  - Works with virtual filesystems, encryption, compression, etc.");
+        NVIGI_LOG_TEST_INFO("  - Plugin code is identical for all three approaches!");
+        
+        // Verify the instance works
+        REQUIRE(instance->evaluate != nullptr);
+        REQUIRE(instance->getInputSignature != nullptr);
+        REQUIRE(instance->getOutputSignature != nullptr);
+        
+        // Test inference with IO callback-loaded model
+        NVIGI_LOG_TEST_INFO("Testing inference with callback-loaded model...");
+        {
+            ai::InferenceDataTextHelper promptHelper("Test with IO callbacks");
+            InferenceDataSlot inputSlots[] = {{kTemplateAIInputPrompt, promptHelper}};
+            InferenceDataSlotArray inputs = {1, inputSlots};
+            
+            static bool s_callbackTriggered = false;
+            static std::string s_response;
+            s_callbackTriggered = false;
+            s_response.clear();
+            
+            auto callback = [](const InferenceExecutionContext* ctx, InferenceExecutionState state, void* userData) -> InferenceExecutionState {
+                s_callbackTriggered = true;
+                if (ctx->outputs) {
+                    const InferenceDataText* output{};
+                    if (ctx->outputs->findAndValidateSlot(kTemplateAIOutputResponse, &output)) {
+                        s_response = output->getUTF8Text();
+                    }
+                }
+                return kInferenceExecutionStateDone;
+            };
+            
+            InferenceExecutionContext execCtx{};
+            execCtx.instance = instance;
+            execCtx.inputs = &inputs;
+            execCtx.outputs = nullptr;
+            execCtx.callback = callback;
+            execCtx.callbackUserData = nullptr;
+            
+            auto evalResult = instance->evaluate(&execCtx);
+            REQUIRE(evalResult == nvigi::kResultOk);
+            REQUIRE(s_callbackTriggered);
+            NVIGI_LOG_TEST_INFO("Inference completed, response: %s", s_response.c_str());
+        }
+        
+        // Clean up
+        auto destroyResult = itemplate->destroyInstance(instance);
+        REQUIRE(destroyResult == nvigi::kResultOk);
+        NVIGI_LOG_TEST_INFO("Instance destroyed successfully");
+    }
+    else
+    {
+        // Expected to fail without actual model implementation in template
+        NVIGI_LOG_TEST_WARN("Instance creation failed (expected for template): error code 0x%x", createResult);
+        NVIGI_LOG_TEST_INFO("To make this test pass, implement actual model loading in templateEntry.cpp");
+    }
+
+    auto unloadResult = params.nvigiUnloadInterface(plugin::template_ai::kId, itemplate);
+    REQUIRE(unloadResult == nvigi::kResultOk);
+    NVIGI_LOG_TEST_INFO("IO callbacks test completed");
+}
+
+//! Test that validates error handling when mixing approaches incorrectly
+TEST_CASE("template_ai_mixed_approaches_validation", "[template],[inference],[cpu],[validation]")
+{
+    nvigi::ITemplateAI* itemplate{};
+    auto loadResult = nvigiGetInterfaceDynamic(
+        plugin::template_ai::kId, 
+        &itemplate, 
+        params.nvigiLoadInterface
+    );
+    
+    REQUIRE(loadResult == nvigi::kResultOk);
+    REQUIRE(itemplate != nullptr);
+
+    NVIGI_LOG_TEST_INFO("Testing validation of creation parameter requirements...");
+    
+    // Test 1: Approach 3 without JSON card should fail
+    NVIGI_LOG_TEST_INFO("Test 1: Approach 3 (callbacks) without modelCardJSON (should fail)");
+    {
+        FileIOCallbacks ioCallbacks{};
+        ioCallbacks.userData = nullptr;
+        ioCallbacks.open = [](void*, const char*, const char*) -> void* { return nullptr; };
+        ioCallbacks.read = [](void*, void*, void*, size_t) -> size_t { return 0; };
+        ioCallbacks.size = [](void*, void*) -> size_t { return 0; };
+        ioCallbacks.close = [](void*, void*) {};
+        
+        CommonCreationParameters common{};
+        common.modelCardJSON = nullptr;  // Missing - required for Approach 3!
+        common.modelGUID = nullptr;
+        common.utf8PathToModels = nullptr;
+        
+        TemplateAICreationParameters templateParams{};
+        templateParams.chain(common);
+        common.chain(ioCallbacks);
+        
+        nvigi::InferenceInstance* instance = nullptr;
+        auto result = itemplate->createInstance(templateParams, &instance);
+        
+        // Should fail - ai::findModels() validates this automatically
+        REQUIRE(result != nvigi::kResultOk);
+        NVIGI_LOG_TEST_INFO("  Correctly rejected by ai::findModels()");
+    }
+    
+    // Test 2: Approach 1/2 without GUID should fail
+    NVIGI_LOG_TEST_INFO("Test 2: Approach 1/2 (filesystem) without modelGUID (should fail)");
+    {
+        CommonCreationParameters common{};
+        common.modelCardJSON = nullptr;
+        common.modelGUID = nullptr;  // Missing - required for Approach 1/2!
+        common.utf8PathToModels = params.modelDir.c_str();
+        
+        TemplateAICreationParameters templateParams{};
+        templateParams.chain(common);
+        
+        nvigi::InferenceInstance* instance = nullptr;
+        auto result = itemplate->createInstance(templateParams, &instance);
+        
+        // Should fail - ai::findModels() validates this automatically
+        REQUIRE(result != nvigi::kResultOk);
+        NVIGI_LOG_TEST_INFO("  Correctly rejected by ai::findModels()");
+    }
+    
+    // Test 3: Approach 1/2 without path should fail
+    NVIGI_LOG_TEST_INFO("Test 3: Approach 1/2 (filesystem) without utf8PathToModels (should fail)");
+    {
+        CommonCreationParameters common{};
+        common.modelCardJSON = nullptr;
+        common.modelGUID = "{01234567-0123-0123-0123-0123456789AB}";
+        common.utf8PathToModels = nullptr;  // Missing - required for Approach 1/2!
+        
+        TemplateAICreationParameters templateParams{};
+        templateParams.chain(common);
+        
+        nvigi::InferenceInstance* instance = nullptr;
+        auto result = itemplate->createInstance(templateParams, &instance);
+        
+        // Should fail - ai::findModels() validates this automatically
+        REQUIRE(result != nvigi::kResultOk);
+        NVIGI_LOG_TEST_INFO("  Correctly rejected by ai::findModels()");
+    }
+
+    auto unloadResult = params.nvigiUnloadInterface(plugin::template_ai::kId, itemplate);
+    REQUIRE(unloadResult == nvigi::kResultOk);
+    NVIGI_LOG_TEST_INFO("Validation tests completed");
+}
+
 //! Add more test cases as needed
 //! Examples:
 //! - Test with different input types (images, tensors, etc.)
@@ -374,6 +632,7 @@ TEST_CASE("template_ai_cancel", "[template],[inference],[cpu],[cancel]")
 //! - Test performance benchmarks
 //! - Test resource limits (memory, GPU usage, etc.)
 //! - Test multi-instance scenarios
+
 
 } // namespace template_ai
 } // namespace nvigi

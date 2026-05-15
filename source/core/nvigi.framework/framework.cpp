@@ -216,6 +216,26 @@ Result checkPluginMinSpec(nvigi::plugin::PluginInfo* info, std::string& message)
         return nvigi::kResultOSOutOfDate;
     }
 #endif
+    if (info->getVersion() >= 2)
+    {
+        auto systemFlags = (uint64_t)ctx->caps.flags;
+        auto minSystemFlags = (uint64_t)info->minSystemFlags;
+        if ((systemFlags & minSystemFlags) != minSystemFlags)
+        {
+            auto missingFlags = ~systemFlags & minSystemFlags;
+            for (auto shift = 0; (1ull << shift) <= missingFlags; ++shift)
+            {
+                auto currFlag = (1ull << shift) & missingFlags;
+                if (currFlag)
+                {
+                    auto errMessage = extra::format("plugin needs system feature {}, no support detected", extra::toStr((SystemFlags)currFlag));
+                    NVIGI_LOG_ERROR(errMessage.c_str());
+                }
+            }
+            message = extra::format("plugin needs missing system features, see details above");
+            return kResultNoSupportedHardwareFound;
+        }
+    }
     if (info->pluginAPI > ctx->apiVersion)
     {
         message = extra::format("plugin needs minimum framework API version {}, detected {}", extra::toStr(info->pluginAPI), extra::toStr(ctx->apiVersion));
@@ -269,13 +289,8 @@ bool validateSharedLibraries(std::vector<fs::path>& visited)
                 auto file_path = entry.path();
                 std::string file_name = file_path.filename().string();
 
-                // Check for .dll on Windows and .so on Linux
-                bool is_shared_lib =
-#if defined(_WIN32) || defined(_WIN64)
-                    file_path.extension() == ".dll";
-#else
-                    file_path.extension() == ".so";
-#endif
+                // Check for .dll on Windows
+                bool is_shared_lib = file_path.extension() == ".dll";
                 if (is_shared_lib) {
                     if (libraryNames.find(file_name) != libraryNames.end()) {
                         // Duplicate found
@@ -310,25 +325,14 @@ bool unloadPlugin(HMODULE hmod, const wchar_t* path)
     // On Windows result is BOOL
     if (!result)
     {
-        auto lastError = GetLastError();
         NVIGI_LOG_ERROR("Failed to unload plugin '%S' - last error %s", path, std::system_category().message(GetLastError()).c_str());
         return false;
     }
-    else
+    // Check to make sure plugin was actually freed
+    wchar_t modulePath[nvigi::file::kMaxFilePath];
+    if (GetModuleFileName(hmod, modulePath, nvigi::file::kMaxFilePath))
     {
-        // Check to make sure plugin was actually freed
-        wchar_t modulePath[nvigi::file::kMaxFilePath];
-        if (GetModuleFileName(hmod, modulePath, nvigi::file::kMaxFilePath))
-        {
-            NVIGI_LOG_ERROR("Module is still loaded, path: '%S' - check for running threads or leaked DLL references, interfaces etc.", modulePath);
-            return false;
-        }
-    }
-#else
-    // On Linux result is int, 0 success
-    if (result)
-    {
-        NVIGI_LOG_ERROR("Failed to unload plugin '%S' - result %d - last error %s", path, result, std::system_category().message(errno).c_str());
+        NVIGI_LOG_ERROR("Module is still loaded, path: '%S' - check for running threads or leaked DLL references, interfaces etc.", modulePath);
         return false;
     }
 #endif
@@ -363,11 +367,7 @@ size_t enumeratePlugins(const char8_t* utf8Directory, bool validateDLLs, const n
 
         name = name.erase(name.find(ext));
 
-#ifdef NVIGI_WINDOWS
         std::u8string dll = u8".dll";
-#else
-        std::u8string dll = u8".so";
-#endif            
         if (ext == dll && name.find(u8"nvigi.plugin.") == 0)
         {
             unsigned long loadLibFlags = LOAD_LIBRARY_SEARCH_DEFAULT_DIRS;
@@ -396,10 +396,6 @@ size_t enumeratePlugins(const char8_t* utf8Directory, bool validateDLLs, const n
                 ctx->dependencies.insert(pluginDependencies.begin(), pluginDependencies.end());
 #endif
             }
-#else
-                // Silence warnings
-            (void)validateDLLs;
-            (void)loadLibFlags;
 #endif
             //! ANSI C Win32 API does not support utf-8 hence using wchar_t
             //! 
@@ -409,8 +405,6 @@ size_t enumeratePlugins(const char8_t* utf8Directory, bool validateDLLs, const n
             {
 #ifdef NVIGI_WINDOWS
                 NVIGI_LOG_ERROR("Failed to load plugin '%s' - error %s", name.c_str(), std::system_category().message(GetLastError()).c_str());
-#else
-                NVIGI_LOG_ERROR("Failed to load plugin '%s' - error %s", name.c_str(), dlerror());
 #endif
                 spec.status = kResultMissingDynamicLibraryDependency;
                 continue;
@@ -552,11 +546,8 @@ Result registerPlugin(nvigi::PluginID feature)
             // This should be caught in enumerate pass really but just in case
 #ifdef NVIGI_WINDOWS
             auto lastError = GetLastError();
-#else
-            (void)loadLibFlags; // silence warnings
-            auto lastError = errno;
-#endif
             NVIGI_LOG_ERROR("Failed to load plugin '%S' - last error %s", path.wstring().c_str(), std::system_category().message(lastError).c_str());
+#endif
             return nvigi::kResultMissingDynamicLibraryDependency;
         }
         auto getFunc = (nvigi::plugin::PFun_PluginGetFunction*)GetProcAddress(hmod, "nvigiPluginGetFunction");

@@ -41,13 +41,6 @@ __except (nvigi::exception::getInterface()->writeMiniDump(GetExceptionInformatio
 #define NVIGI_CATCH_EXCEPTION_RETURN(FUN, RET) return FUN;
 #endif
 
-#else // NVIGI_LINUX
-
-// TODO for Linux
-#define NVIGI_CATCH_EXCEPTION(FUN) return FUN;
-#define NVIGI_CATCH_EXCEPTION_RETURN(FUN, RET) return FUN;
-#define NVIGI_CATCH_EXCEPTION_NO_RETURN(FUN, RET) FUN;
-
 #endif // NVIGI_WINDOWS
 
 namespace nvigi

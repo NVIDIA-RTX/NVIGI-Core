@@ -13,10 +13,14 @@
 	nvigi-core-source\docs/Architecture.md
 	nvigi-core-source\docs/GpuSchedulingForAI.md
 	nvigi-core-source\docs/HybridAI.md
+	nvigi-core-source\docs/IntegrationTutorial.md
 	nvigi-core-source\docs/PluginDevelopmentGuide.md
 	nvigi-core-source\docs/PluginDevelopmentTutorial.md
 	nvigi-core-source\docs/ProgrammingGuide.md
 	nvigi-core-source\docs/ProgrammingGuideAI.md
+	nvigi-core-source\docs/ProgrammingGuideCloudSecurity.md
+	nvigi-core-source\docs/RunningOnMultipleGPUs.md
+	nvigi-core-source\docs/llamacpp_CIG_patch.md
 	nvigi-core-source\docs\media/guid-1.png
 	nvigi-core-source\docs\media/guid.png
 	nvigi-core-source\docs\media/hybridai.svg
@@ -25,6 +29,9 @@
 	nvigi-core-source\docs\media/hybridai_api_instance.svg
 	nvigi-core-source\docs\media/hybridai_api_instance_eval.svg
 	nvigi-core-source\docs\media/hybridai_api_instance_pipeline.svg
+	nvigi-core-source\extras\llamacpp_CIG_patch/README.txt
+	nvigi-core-source\extras\llamacpp_CIG_patch/llama.cpp_modifications.patch
+	nvigi-core-source\extras\llamacpp_CIG_patch/setup.bat
 	nvigi-core-source\premake/premake.shared_config.lua
 	nvigi-core-source\premake/premake.shared_plugin.lua
 	nvigi-core-source\premake/premake.utils.lua
@@ -95,6 +102,7 @@
 	nvigi-core-source\source\plugins\nvigi.net/plugin.rc
 	nvigi-core-source\source\plugins\nvigi.net/premake.lua
 	nvigi-core-source\source\plugins\nvigi.net/resource.h
+	nvigi-core-source\source\plugins\nvigi.net/tests.h
 	nvigi-core-source\source\plugins\nvigi.net/versions.h
 	nvigi-core-source\source\plugins\nvigi.template.generic/nvigi_template.h
 	nvigi-core-source\source\plugins\nvigi.template.generic/premake.lua

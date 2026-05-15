@@ -14,10 +14,10 @@ Download the NVIGI Core Plugin Development Kit (PDK) from the latest entry in th
 
 ## Duplicating and Renaming the Template Plugin Source
 >**NOTE**: For purposes of this guide, we will assume your new custom NVIGI plugin will be called `nvigi.mygpt`.
-1. Go to `<CORE_PDK_ROOT>\sources\plugins\` and duplicate the folder `nvigi.template.inference` inside; rename it as `nvigi.mygpt`.
-1. Go to `<CORE_PDK_ROOT>\sources\plugins\nvigi.mygpt\`
+1. Go to `<CORE_PDK_ROOT>\source\plugins\` and duplicate the folder `nvigi.template.inference` inside; rename it as `nvigi.mygpt`.
+1. Go to `<CORE_PDK_ROOT>\source\plugins\nvigi.mygpt\`
 1. Rename public header `nvigi_template_infer.h` to `nvigi_mygpt.h`.
-1. Open `<CORE_PDK_ROOT>\sources\plugins\nvigi.mygpt\nvigi_mygpt.h` in a text editor, and perform the following replacements:
+1. Open `<CORE_PDK_ROOT>\source\plugins\nvigi.mygpt\nvigi_mygpt.h` in a text editor, and perform the following replacements:
     1. Rename the namespace for the plugin ID:
         - E.g.:
         ```cpp
@@ -72,7 +72,7 @@ Download the NVIGI Core Plugin Development Kit (PDK) from the latest entry in th
     1. Open a Visual Studio 2022 Developer Console to `<CORE_PDK_ROOT>`.
     1. Run the following command:
         ```
-        bin\Debug_x64\nvigi.tool.utils.exe --plugin nvigi.plugin.mygpt
+        bin\x64\Debug\nvigi.tool.utils.exe --plugin nvigi.plugin.mygpt
         ```
     1. Copy the entire line that begins with `constexpr PluginID kId = ...` in the console output, and replace the corresponding line in the header
         ```cpp
@@ -93,7 +93,7 @@ Download the NVIGI Core Plugin Development Kit (PDK) from the latest entry in th
 1. Use the same NVIGI utility tool to generate new UIDs for each struct
     1. For each struct in the header file, run the following command (replacing the name of the struct accordingly):
         ```cpp
-        bin\Debug_x64\nvigi.tool.utils.exe --interface MyGPTCreationParameters
+        bin\x64\Debug\nvigi.tool.utils.exe --interface MyGPTCreationParameters
         ```
     1. Then replace the UID string as appropriate
         ```cpp
@@ -108,7 +108,7 @@ Download the NVIGI Core Plugin Development Kit (PDK) from the latest entry in th
         NVIGI_VALIDATE_STRUCT(MyGPTCreationParameters)
         ```
     >**IMPORTANT NOTE**: Please notice some of the structs have a regular version (e.g. `MyGPTCreationParameters`) and an extended version (e.g. `MyGPTCreationParametersEx`); please make sure to repeat the UID generation process for each separately.
-1. Rename folder `<CORE_PDK_ROOT>\sources\plugins\nvigi.mygpt\backend` to match the target backend you are using.
+1. Rename folder `<CORE_PDK_ROOT>\source\plugins\nvigi.mygpt\backend` to match the target backend you are using.
     - For example, the GPT plugin interface in the [NVIGI SDK release pack](https://developer.nvidia.com/rtx/in-game-inferencing) has multiple backends:
         - One based on REST APIs for AI inference in a cloud instance
         - One based on the [GGML](https://ggml.ai/) tensor library for local AI inference.
@@ -117,7 +117,7 @@ Download the NVIGI Core Plugin Development Kit (PDK) from the latest entry in th
     - Ideally, all backends should implement the same interface declared in `nvigi_myplugin.h`
     - For purposes of this tutorial, we will leave the `backend` folder intact and as the only existing backend for our `nvigi.mygpt` plugin.
 1. Next step, is to modify the implementation file to match the changes made to the interface in the header file.
-    1. Rename the file `<CORE_PDK_ROOT>\sources\plugins\nvigi.mygpt\backend\templateEntry.cpp` to something else (e.g. `<CORE_PDK_ROOT>\sources\plugins\nvigi.mygpt\backend\myGPTEntry.cpp`), then open it in a text editor.
+    1. Rename the file `<CORE_PDK_ROOT>\source\plugins\nvigi.mygpt\backend\templateEntry.cpp` to something else (e.g. `<CORE_PDK_ROOT>\source\plugins\nvigi.mygpt\backend\myGPTEntry.cpp`), then open it in a text editor.
     1. Rename the class `TemplateAIPlugin` to `MyGPTPlugin`, including all references to it in the file. Best practice is using the text editor's search-and-replace functionality with the "match case" and "whole word" options enabled. This should replace it within the C++ class itself as well as the `NVIGI_MODERN_PLUGIN` plugin export macro at the end of the file.
     1. Repeat the previous substitution step with the `MyGPTPluginContext` struct, using the same parameters (both "match case" and "whole word" options on). Again, this should substitute it in the struct declaration and the `NVIGI_MODERN_PLUGIN` plugin export macro at the end of the file again.
     1. Next, apply the same substitution scheme to all the renamings that were done to the header file to the implementation file; meaning:
@@ -129,9 +129,9 @@ Download the NVIGI Core Plugin Development Kit (PDK) from the latest entry in th
 ## Modifying the Unit Tests
 NVIGI Core ships with a set of unit tests for each plugin; these are implemented using the [Catch2](https://catch2.org/) testing framework. These unit tests are executed via a command-line utility (`nvigi.test.exe`), which source code is included in the PDK pack. In order to run those unit tests, simply run open a Visual Studio 2022 Development console to the `<CORE_PDK_ROOT>` directory, and execute the following command:
 ```
-bin\Debug_x64\nvigi.test.exe
+bin\x64\Debug\nvigi.test.exe
 ```
-After the tests run, a timestamped log file inside `<CORE_PDK_ROOT>\bin\Debug_x64\` is created with the output.
+After the tests run, a timestamped log file inside `<CORE_PDK_ROOT>\bin\x64\Debug\` is created with the output.
 This section explains how to modify the unit tests for the new custom plugin `nvigi.mygpt` and how to add them to the `nvigi.test.exe` utility.
 1. Open the file `<CORE_PDK_ROOT>\source\plugins\nvigi.mygpt\backend\tests.h` in a file editor.
 1. Update the first include macro to point to the renamed header file for the new plugin:
@@ -337,21 +337,21 @@ NVIGI inference plugins are always paired with one or more sets of AI model file
 1. Open a Visual Studio 2022 Developer Console to `<CORE_PDK_ROOT>`.
 1. Run `setup.bat vs2022`. This will create a folder called `_project` that contains all of the Visual Studio 2022 project and solution files.
     > NOTE:
-    > The first time `setup.bat` runs it will download some build dependencies and install them in a central repository. Subsequent executins of `setup.bat` will not do that and will be much quicker.
+    > The first time `setup.bat` runs it will download some build dependencies and install them in a central repository. Subsequent executions of `setup.bat` will not do that and will be much quicker.
 
     > NOTE:
     > If `setup.bat` fails with an error from the `packman` package downloader, please re-run `setup.bat` again as there are rare but possible issues with link-creation on initial run.
 1. To build the project, there are two options:
     1. Open `<CORE_PDK_ROOT>\_project\vs2022\nvigicoresdk.sln` in Visual Studio 2022, and use it to build the entire solution, or
     1. Run `build.bat -Debug` on the developer console
-1. Either of the previous two options will create a temporary folder called `_artifacts`, and it will also update the executable files and shared libraries inside `<CORE_PDK_ROOT>\bin\Debug_x86`
+1. Either of the previous two options will create a temporary folder called `_artifacts`, and it will also update the executable files and shared libraries inside `<CORE_PDK_ROOT>\bin\x64\Debug`
 
 ## Considerations when Developing Custom Plugins
 * Modify source code (add new headers or cpp files as needed) to perform actions you need for your plugin
   * If adding new files, make sure to re-run `setup.bat`
   * If adding a new directory with source code, make sure to update your plugin's `premake.lua` file as well as re-running `setup.bat`
 * Make sure NOT to include internal headers in your public `nvigi_$name.h` header
-* When adding new data structures/interfaces which are shared either publicly or internally, you must use the `nvigi.tool.utils` as described in [GUID creation](#guid-creation-for-interfaces-and-plugins)  
+* When adding new data structures/interfaces which are shared either publicly or internally, you must use the `nvigi.tool.utils` as described in [GUID creation](PluginDevelopmentGuide.md#guid-creation-for-interfaces-and-plugins)  
 * When modifying an existing shared data or interfaces **always follow the "do not break C ABI compatibility" guidelines**
 * Wrap all you externally exposed functions with `NVIGI_CATCH_EXCEPTION`
 * Choose your GPU backend(s) by uncommenting the appropriate sections in `premake.lua`:

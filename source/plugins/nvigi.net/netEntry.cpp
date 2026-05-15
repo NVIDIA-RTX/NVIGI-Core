@@ -47,31 +47,50 @@ Result _setVerboseMode(bool flag)
 {
     return net::getInterface()->setVerboseMode(flag);
 }
-Result _nvcfSetToken(const char* token)
+Result _setAuthToken(const char* token)
 {
-    return net::getInterface()->nvcfSetToken(token);
+    return net::getInterface()->setAuthToken(token);
 }
-Result _nvcfGet(const Parameters& params, types::string& response)
+Result _httpGet(const Parameters& params, types::string& response)
 {
-    json data;
-    auto res = net::getInterface()->nvcfGet(params, data);
-    response = data.dump(-1, ' ', false, json::error_handler_t::replace).c_str();
+    std::string data;
+    auto res = net::getInterface()->httpGet(params, data);
+    response = data.c_str();
     return res;
 }
-Result _nvcfPost(const Parameters& params, types::string& response)
+Result _httpPost(const Parameters& params, types::string& response)
 {
-    json data;
-    auto res = net::getInterface()->nvcfPost(params, data);
-    response = data.dump(-1, ' ', false, json::error_handler_t::replace).c_str();
+    std::string data;
+    auto res = net::getInterface()->httpPost(params, data);
+    response = data.c_str();
     return res;
 }
-Result _nvcfPostStreaming(const Parameters& params, StreamingDataCallback callback, void* userdata)
+Result _httpGetRaw(const Parameters& params, types::vector<uint8_t>& response)
 {
-    return net::getInterface()->nvcfPostStreaming(params, callback, userdata);
+    std::string data;
+    auto res = net::getInterface()->httpGet(params, data);
+    response.resize(data.size());
+    if (!data.empty()) memcpy(response.data(), data.data(), data.size());
+    return res;
 }
-Result _nvcfUploadAsset(const types::string& contentType, const types::string& description, const types::vector<uint8_t>& asset, types::string& assetId)
+Result _httpPostRaw(const Parameters& params, types::vector<uint8_t>& response)
 {
-    return net::getInterface()->nvcfUploadAsset(contentType, description, asset, assetId);
+    // Raw methods must never enter the JSON parse / status polling path
+    Parameters rawParams = params;
+    rawParams.enableStatusPolling = false;
+    std::string data;
+    auto res = net::getInterface()->httpPost(rawParams, data);
+    response.resize(data.size());
+    if (!data.empty()) memcpy(response.data(), data.data(), data.size());
+    return res;
+}
+Result _httpPostStreaming(const Parameters& params, StreamingDataCallback callback, void* userdata)
+{
+    return net::getInterface()->httpPostStreaming(params, callback, userdata);
+}
+Result _uploadAsset(const types::string& contentType, const types::string& description, const types::vector<uint8_t>& asset, types::string& assetId)
+{
+    return net::getInterface()->uploadAsset(contentType, description, asset, assetId);
 }
 
 namespace net
@@ -80,25 +99,33 @@ Result setVerboseMode(bool flag)
 {
     NVIGI_CATCH_EXCEPTION(_setVerboseMode(flag));
 }
-Result nvcfSetToken(const char* token)
+Result setAuthToken(const char* token)
 {
-    NVIGI_CATCH_EXCEPTION(_nvcfSetToken(token));
+    NVIGI_CATCH_EXCEPTION(_setAuthToken(token));
 }
-Result nvcfGet(const Parameters& params, types::string& response)
+Result httpGet(const Parameters& params, types::string& response)
 {
-    NVIGI_CATCH_EXCEPTION(_nvcfGet(params, response));
+    NVIGI_CATCH_EXCEPTION(_httpGet(params, response));
 }
-Result nvcfPost(const Parameters& params, types::string& response)
+Result httpPost(const Parameters& params, types::string& response)
 {
-    NVIGI_CATCH_EXCEPTION(_nvcfPost(params, response));
+    NVIGI_CATCH_EXCEPTION(_httpPost(params, response));
 }
-Result nvcfPostStreaming(const Parameters& params, StreamingDataCallback callback, void* userdata)
+Result httpPostStreaming(const Parameters& params, StreamingDataCallback callback, void* userdata)
 {
-    NVIGI_CATCH_EXCEPTION(_nvcfPostStreaming(params, callback, userdata));
+    NVIGI_CATCH_EXCEPTION(_httpPostStreaming(params, callback, userdata));
 }
-Result nvcfUploadAsset(const types::string& contentType, const types::string& description, const types::vector<uint8_t>& asset, types::string& assetId)
+Result uploadAsset(const types::string& contentType, const types::string& description, const types::vector<uint8_t>& asset, types::string& assetId)
 {
-    NVIGI_CATCH_EXCEPTION(_nvcfUploadAsset(contentType, description, asset, assetId));
+    NVIGI_CATCH_EXCEPTION(_uploadAsset(contentType, description, asset, assetId));
+}
+Result httpGetRaw(const Parameters& params, types::vector<uint8_t>& response)
+{
+    NVIGI_CATCH_EXCEPTION(_httpGetRaw(params, response));
+}
+Result httpPostRaw(const Parameters& params, types::vector<uint8_t>& response)
+{
+    NVIGI_CATCH_EXCEPTION(_httpPostRaw(params, response));
 }
 } // net
 
@@ -139,11 +166,13 @@ Result nvigiPluginRegister(framework::IFramework* framework)
     if (net::getInterface()->initialize() == kResultOk)
     {
         ctx.api.setVerboseMode = net::setVerboseMode;
-        ctx.api.nvcfSetToken = net::nvcfSetToken;
-        ctx.api.nvcfGet = net::nvcfGet;
-        ctx.api.nvcfPost = net::nvcfPost;
-        ctx.api.nvcfPostStreaming = net::nvcfPostStreaming;
-        ctx.api.nvcfUploadAsset = net::nvcfUploadAsset;
+        ctx.api.nvcfSetToken = net::setAuthToken;
+        ctx.api.nvcfGet = net::httpGet;
+        ctx.api.nvcfPost = net::httpPost;
+        ctx.api.nvcfPostStreaming = net::httpPostStreaming;
+        ctx.api.nvcfUploadAsset = net::uploadAsset;
+        ctx.api.httpGetRaw = net::httpGetRaw;
+        ctx.api.httpPostRaw = net::httpPostRaw;
         framework->addInterface(plugin::net::kId, &ctx.api, 0);
     }
 

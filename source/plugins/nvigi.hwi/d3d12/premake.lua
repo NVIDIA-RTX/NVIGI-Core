@@ -13,22 +13,20 @@ group "plugins/hwi"
 
 		vpaths { ["impl"] = {"./*.h", "./*.cpp" }}
 
-		includedirs {
-			externaldir .."cig_scheduler_settings//include", 
-			externaldir .."dx_compute_scheduling_dummy_nvapi", 
-			"./"
+		filter {"system:windows", "platforms:x64"}
+			includedirs {
+				externaldir .. "nvapi",
+				externaldir .."cig_scheduler_settings//include", 
+				"./"
+			}
+			links { ROOT .. "external/nvapi/amd64/nvapi64.lib"}
+		filter {}
+
+	filter {"platforms:x64"}
+		postbuildcommands {
+		  '{COPYFILE} ../../external/cig_scheduler_settings/bin/x64/Release/cig_scheduler_settings.dll %[%{cfg.buildtarget.directory}]'
 		}
-
-		libdirs {
-		}
-
-		links { ROOT .. "external/nvapi/amd64/nvapi64.lib"}
-
 	filter {}
-
-	postbuildcommands {
-	  '{COPYFILE} ../../external/cig_scheduler_settings/bin/Release_x64/cig_scheduler_settings.dll %[%{cfg.buildtarget.directory}]'
-	}
 group ""
 
 end

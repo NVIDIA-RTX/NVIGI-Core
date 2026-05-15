@@ -489,7 +489,7 @@ NVIGI_VALIDATE_STRUCT(IPolledInferenceInterface)
 //! {CC8CAD78-95F0-41B0-AD9C-5D6995988B23}
 struct alignas(8) CommonCreationParameters {
     CommonCreationParameters() {};
-    NVIGI_UID(UID({ 0xcc8cad78, 0x95f0, 0x41b0,{ 0xad, 0x9c, 0x5d, 0x69, 0x95, 0x98, 0x8b, 0x23 } }), kStructVersion1)
+    NVIGI_UID(UID({ 0xcc8cad78, 0x95f0, 0x41b0,{ 0xad, 0x9c, 0x5d, 0x69, 0x95, 0x98, 0x8b, 0x23 } }), kStructVersion2)
     //! Relevant only for CPU backends, should be set to 1 for all GPU based backends
     int32_t numThreads = 1;
     //! Now much VRAM is allowed to use
@@ -501,7 +501,12 @@ struct alignas(8) CommonCreationParameters {
     //! Optional - path to the additional models downloaded on the system (if any)
     const char* utf8PathToAdditionalModels{};
 
-    //! v2+ members go here, remember to update the kStructVersionN in the above NVIGI_UID macro!
+    //! v2
+
+    //! JSON model card if model GUID is not used and custom model loading is preferred
+    const char* modelCardJSON{};
+
+    //! v3+ members go here, remember to update the kStructVersionN in the above NVIGI_UID macro!
 };
 
 NVIGI_VALIDATE_STRUCT(CommonCreationParameters)

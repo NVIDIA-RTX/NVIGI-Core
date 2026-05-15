@@ -39,7 +39,7 @@ The following sections detail each of the steps of how to set up, rebuild and ru
    3. Build ALL configurations (Debug, Release, Production) manually or using Batch Build...
 3. Run the test app
    1. Open a (or use an existing) VS2022 Development Command Prompt to therepo directory (same directory as this file)
-      2. Run `bin\Release_x64\nvigi.test.exe`
+      2. Run `bin\x64\Release\nvigi.test.exe`
 4. Package the core "SDK" if needed for use case
 
 ## Setup 
@@ -83,7 +83,7 @@ To run `nvigi.test.exe` from the command line, take the following steps:
 1. Open a command prompt in the same directory as this readme
 2. Run the command:
 ```sh
-bin\Release_x64\nvigi.test.exe
+bin\x64\Release\nvigi.test.exe
 ```
 
 #### Run in Debugger

@@ -9,13 +9,6 @@
 
 #include "source/core/nvigi.memory/memory.h"
 
-#if NVIGI_LINUX
-#define strcpy_s(a,b,c) strcpy(a,c)
-#define strcat_s(a,b,c) strcat(a,c)
-#define memcpy_s(a,b,c,d) memcpy(a,c,d)
-#define strncpy_s(a, b, c, d) strncpy(a, c, d)
-#endif
-
 //! Simple ABI stable alternatives for std::string and std::vector
 //! 
 //! Not even trying to replace STL completely, just basic functionality to allow crossing DLL boundaries and ensure backwards compatibility

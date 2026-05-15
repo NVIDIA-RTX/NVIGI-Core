@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 //
 
+#pragma once
+
 namespace nvigi
 {
 namespace plugin
@@ -20,6 +22,7 @@ constexpr uint32_t kResultNetFailedToInitializeCurl = 2 << 24 | plugin::net::kId
 constexpr uint32_t kResultNetCurlError = 3 << 24 | plugin::net::kId.crc24;
 constexpr uint32_t kResultNetServerError = 4 << 24 | plugin::net::kId.crc24;
 constexpr uint32_t kResultNetTimeout = 5 << 24 | plugin::net::kId.crc24;
+constexpr uint32_t kResultNetResponseTooLarge = 6 << 24 | plugin::net::kId.crc24;
 
 }
 }

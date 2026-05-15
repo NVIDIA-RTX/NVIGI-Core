@@ -16,21 +16,6 @@
 #include "source/core/nvigi.log/log.h"
 
 using namespace std::chrono_literals;
-#ifdef NVIGI_LINUX
-#include "source/core/nvigi.extra/extra.h"
-#define THREAD_BASE_PRIORITY_LOWRT  15  // value that gets a thread to LowRealtime-1
-#define THREAD_BASE_PRIORITY_MAX    2   // maximum thread base priority boost
-#define THREAD_BASE_PRIORITY_MIN    (-2)  // minimum thread base priority boost
-#define THREAD_BASE_PRIORITY_IDLE   (-15) // value that gets a thread to idle
-#define THREAD_PRIORITY_LOWEST          THREAD_BASE_PRIORITY_MIN
-#define THREAD_PRIORITY_BELOW_NORMAL    (THREAD_PRIORITY_LOWEST+1)
-#define THREAD_PRIORITY_NORMAL          0
-#define THREAD_PRIORITY_HIGHEST         THREAD_BASE_PRIORITY_MAX
-#define THREAD_PRIORITY_ABOVE_NORMAL    (THREAD_PRIORITY_HIGHEST-1)
-#define THREAD_PRIORITY_ERROR_RETURN    (MAXLONG)
-#define THREAD_PRIORITY_TIME_CRITICAL   THREAD_BASE_PRIORITY_LOWRT
-#define THREAD_PRIORITY_IDLE            THREAD_BASE_PRIORITY_IDLE
-#endif
 
 namespace nvigi
 {
@@ -77,8 +62,6 @@ struct ThreadContext
         // need to switch to classic mode with mutex lock.
 #ifdef NVIGI_WINDOWS
         auto id = GetCurrentThreadId();
-#else
-        auto id = pthread_self();
 #endif
         if (!useThreadMap && id > 65536)
         {
@@ -190,9 +173,6 @@ public:
             NVIGI_LOG_WARN("Failed to set thread priority to %d for thread '%S'", priority, name);
         }
         SetThreadDescription(m_thread.native_handle(), name);
-#else
-        pthread_setschedprio(m_thread.native_handle(), priority);        
-        pthread_setname_np(m_thread.native_handle(), extra::utf16ToUtf8(name).c_str());
 #endif
     }
 

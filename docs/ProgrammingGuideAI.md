@@ -351,19 +351,401 @@ Before creating an instance, host application must specify certain properties li
 //! {CC8CAD78-95F0-41B0-AD9C-5D6995988B23}
 struct alignas(8) CommonCreationParameters {
     CommonCreationParameters() {};
-    NVIGI_UID(UID({ 0xcc8cad78, 0x95f0, 0x41b0,{ 0xad, 0x9c, 0x5d, 0x69, 0x95, 0x98, 0x8b, 0x23 } }), kStructVersion1);
-    int32_t numThreads{};
+    NVIGI_UID(UID({ 0xcc8cad78, 0x95f0, 0x41b0,{ 0xad, 0x9c, 0x5d, 0x69, 0x95, 0x98, 0x8b, 0x23 } }), kStructVersion2);
+    int32_t numThreads = 1;
     size_t vramBudgetMB = SIZE_MAX;
     const char* modelGUID{};
     const char* utf8PathToModels{};
-    //! Optional - additional models downloaded on the system (if any)
+    //! Optional - path to additional models downloaded on the system (if any)
     const char* utf8PathToAdditionalModels{};
 
-    //! NEW MEMBERS GO HERE, BUMP THE VERSION!
+    //! v2
+    
+    //! JSON model card if model GUID is not used and custom model loading is preferred
+    const char* modelCardJSON{};
+
+    //! v3+ members go here, remember to update the kStructVersionN in the above NVIGI_UID macro!
 };
 ```
 
-Plugins cannot create an instance unless they know where NVIGI models repository is located, what model GUID to use, how much VRAM is OK to use etc. All this information is provided in common creation parameters. Each plugin can define custom ones, this obviously depends on what parameters are needed to create an instance.
+### Model Loading Approaches
+
+NVIGI supports three approaches for loading models, allowing flexibility based on your application's requirements:
+
+#### Approach 1: Legacy (GUID-Based Discovery with Extension Search)
+
+The traditional method uses filesystem-based model discovery:
+
+**Requirements:**
+- `modelGUID` must be provided (registry format: `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`)
+- `utf8PathToModels` must point to valid model repository root
+- `FileIOCallbacks` should NOT be provided (or NULL)
+- Model config JSON does NOT contain `model.local_files` array
+
+**How it works:**
+1. Plugin scans `utf8PathToModels` directory for GUID subdirectory
+2. Finds `nvigi.model.config.json` inside GUID folder
+3. Discovers model files by scanning directory for required extensions
+4. Loads files using standard file I/O
+
+**Example:**
+```cpp
+CommonCreationParameters common{};
+common.utf8PathToModels = "D:/models";
+common.modelGUID = "{175C5C5D-E978-41AF-8F11-880D0517C524}";
+common.numThreads = 4;
+common.vramBudgetMB = 8000;
+
+nvigi::InferenceInstance* instance{};
+interface->createInstance(common, &instance);
+```
+
+**Model directory structure:**
+```
+D:/models/
+└── nvigi.plugin.gpt.ggml/
+    └── {175C5C5D-E978-41AF-8F11-880D0517C524}/
+        ├── nvigi.model.config.json  (no local_files array)
+        ├── model.gguf
+        └── tokenizer.bin
+```
+
+#### Approach 2: Hybrid (GUID-Based Discovery with local_files)
+
+Optimized filesystem approach that explicitly lists required files in the model config JSON.
+
+**Requirements:**
+- `modelGUID` must be provided (registry format: `{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}`)
+- `utf8PathToModels` must point to valid model repository root
+- `FileIOCallbacks` should NOT be provided (or NULL)
+- Model config JSON MUST contain `model.local_files` array
+
+**How it works:**
+1. Plugin scans `utf8PathToModels` directory for GUID subdirectory
+2. Finds `nvigi.model.config.json` inside GUID folder
+3. Reads `model.local_files` array from JSON
+4. Builds full paths: `{utf8PathToModels}/{pluginDir}/{GUID}/{fileName}`
+5. Loads files using standard file I/O (no directory scanning for extensions)
+
+**Benefits:**
+- Faster than extension search (no directory scanning)
+- Explicitly lists all required files
+- Still uses standard filesystem (no callbacks needed)
+- Better for models with multiple files or unusual extensions
+
+**Example:**
+```cpp
+CommonCreationParameters common{};
+common.utf8PathToModels = "D:/models";
+common.modelGUID = "{175C5C5D-E978-41AF-8F11-880D0517C524}";
+common.numThreads = 4;
+common.vramBudgetMB = 8000;
+
+nvigi::InferenceInstance* instance{};
+interface->createInstance(common, &instance);
+```
+
+**Model config JSON with local_files:**
+```json
+{
+    "name": "llama-3.1-8b-instruct",
+    "vram": 5124,
+    "model": {
+        "ext": "gguf",
+        "notes": "Model files explicitly listed",
+        "local_files": [
+            "llama-3.1-8b-instruct.gguf",
+            "tokenizer.model",
+            "config.json"
+        ]
+    }
+}
+```
+
+**Model directory structure:**
+```
+D:/models/
+└── nvigi.plugin.gpt.ggml/
+    └── {175C5C5D-E978-41AF-8F11-880D0517C524}/
+        ├── nvigi.model.config.json  (contains local_files)
+        ├── llama-3.1-8b-instruct.gguf
+        ├── tokenizer.model
+        └── config.json
+```
+
+#### Approach 3: Modern (Direct JSON Card with IO Callbacks)
+
+Modern method bypasses filesystem entirely, allowing virtual file systems, encryption, compression, or remote storage:
+
+**Requirements:**
+- `modelCardJSON` must be provided with model configuration
+- `FileIOCallbacks` must be provided via parameter chaining
+- `modelGUID` and `utf8PathToModels` can be NULL/empty
+
+**How it works:**
+1. Host provides complete model card JSON directly via `modelCardJSON`
+2. Plugin parses JSON and reads `model.local_files` array for file names
+3. Plugin uses `FileIOCallbacks` to load files (no filesystem access)
+4. Skips directory scanning entirely (`ai::findModels()` not called)
+
+**Example:**
+```cpp
+// Prepare model card JSON
+const char* modelJSON = R"({
+    "name": "my-custom-model",
+    "vram": 4096,
+    "model": {
+        "ext": "gguf",
+        "notes": "Custom model with IO callbacks",
+        "local_files": [
+            "model.gguf",
+            "tokenizer.bin"
+        ]
+    }
+})";
+
+// Setup IO callbacks
+FileIOCallbacks ioCallbacks{};
+ioCallbacks.userData = myCustomFileSystem;
+ioCallbacks.open = [](void* userData, const char* path, const char* mode) -> void* {
+    auto fs = (MyFileSystem*)userData;
+    return fs->openFile(path, mode);
+};
+ioCallbacks.read = [](void* userData, void* handle, void* buffer, size_t size) -> size_t {
+    auto fs = (MyFileSystem*)userData;
+    return fs->readFile(handle, buffer, size);
+};
+ioCallbacks.size = [](void* userData, void* handle) -> size_t {
+    auto fs = (MyFileSystem*)userData;
+    return fs->getFileSize(handle);
+};
+ioCallbacks.close = [](void* userData, void* handle) {
+    auto fs = (MyFileSystem*)userData;
+    fs->closeFile(handle);
+};
+
+// Create common parameters with JSON card
+CommonCreationParameters common{};
+common.modelCardJSON = modelJSON;  // Provide JSON directly
+common.modelGUID = nullptr;        // Not needed with callbacks
+common.utf8PathToModels = nullptr; // Not needed with callbacks
+common.numThreads = 4;
+common.vramBudgetMB = 8000;
+
+// Chain IO callbacks
+MyPluginCreationParameters params{};
+if (NVIGI_FAILED(params.chain(common))) {
+    // Handle error
+}
+if (NVIGI_FAILED(params.chain(ioCallbacks))) {
+    // Handle error
+}
+
+nvigi::InferenceInstance* instance{};
+interface->createInstance(params, &instance);
+```
+
+**JSON Card Format:**
+
+The `modelCardJSON` must contain a `model.local_files` array listing all files the plugin needs:
+
+```json
+{
+    "name": "my-model-name",
+    "vram": 4096,
+    "model": {
+        "ext": "gguf",
+        "notes": "Model description",
+        "local_files": [
+            "my_model.gguf",
+            "tokenizer.bin",
+            "config.json"
+        ]
+    },
+    "prompt_template": ["optional", "for", "LLM", "models"],
+    "turn_template": ["optional", "for", "chat", "models"]
+}
+```
+
+**Benefits of New Approach:**
+- No filesystem access required
+- Works with encrypted/compressed storage
+- Supports virtual file systems
+- Enables cloud/network storage
+- Allows custom security/access control
+- Model files don't need to be on disk
+
+### Implementing Plugins Supporting All Three Approaches
+
+The beauty of the unified API is that plugins don't need to manually check which approach is being used. Simply call `ai::findModels()` with the `FileIOCallbacks` parameter, and it automatically detects and handles all three approaches!
+
+Here's the simplified implementation pattern in your plugin's `onCreateInstance` method:
+
+```cpp
+static Expected<void> onCreateInstance(
+    const NVIGIParameter* params,
+    std::any& pluginData)
+{
+    auto common = findStruct<CommonCreationParameters>(params);
+    if (!common) {
+        return std::unexpected(Error{
+            kResultInvalidParameter,
+            "CommonCreationParameters required"
+        });
+    }
+
+    // Get FileIOCallbacks (nullptr if not using Approach 3)
+    auto ioCallbacks = findStruct<FileIOCallbacks>(params);
+    
+    // Unified model discovery - handles ALL three approaches automatically!
+    auto& ctx = ModernPluginBase<MyPlugin, IMyAPI>::getContext();
+    if (ctx.modelInfo.empty()) {
+        // Just pass ioCallbacks and ai::findModels() does the rest:
+        // - Approach 3: ioCallbacks provided → uses modelCardJSON directly
+        // - Approach 2: no callbacks, JSON has local_files → uses file names from JSON
+        // - Approach 1: no callbacks, JSON lacks local_files → scans by extension
+        if (!ai::findModels(common, {"gguf", "bin"}, ctx.modelInfo, ioCallbacks)) {
+            return std::unexpected(Error{
+                kResultInvalidParameter,
+                "Failed to find models - check logs for details"
+            });
+        }
+    }
+    
+    // Extract model information
+    // For Approach 3 (callbacks), the key is "callback-model"
+    // For Approach 1 & 2 (filesystem), the key is the GUID
+    std::string modelKey = ioCallbacks ? "callback-model" : common->modelGUID;
+    
+    std::vector<std::string> modelFiles;
+    json modelCard;
+    
+    try {
+        modelCard = ctx.modelInfo[modelKey];
+        
+        // Get files for your extension (e.g., "gguf")
+        if (ctx.modelInfo[modelKey].contains("gguf")) {
+            modelFiles = ctx.modelInfo[modelKey]["gguf"];
+        }
+    } catch (const std::exception& e) {
+        return std::unexpected(Error{
+            kResultJSONException,
+            "Model info error: " + std::string(e.what())
+        });
+    }
+    
+    if (modelFiles.empty()) {
+        return std::unexpected(Error{
+            kResultInvalidParameter,
+            "No model files found"
+        });
+    }
+    
+    // Now load the files
+    if (ioCallbacks) {
+        // Approach 3: Load using callbacks
+        for (const auto& fileName : modelFiles) {
+            auto handle = ioCallbacks->open(
+                ioCallbacks->userData, fileName.c_str(), "rb");
+            if (!handle) {
+                return std::unexpected(Error{
+                    kResultInvalidParameter,
+                    "Failed to open: " + fileName
+                });
+            }
+            
+            size_t size = ioCallbacks->size(ioCallbacks->userData, handle);
+            std::vector<char> buffer(size);
+            ioCallbacks->read(ioCallbacks->userData, handle, buffer.data(), size);
+            ioCallbacks->close(ioCallbacks->userData, handle);
+            
+            // Process buffer...
+        }
+    } else {
+        // Approach 1 or 2: Load using standard file I/O
+        for (const auto& filePath : modelFiles) {
+            // Load from disk using standard I/O
+            // filePath is already a full path from ai::findModels()
+            // ... load from disk ...
+        }
+    }
+    
+    // Continue with model initialization using loaded data...
+    return {};
+}
+```
+
+**That's it!** No need to manually check parameters, validate approaches, or duplicate logic. The `ai::findModels()` function handles everything.
+
+**Key Points for Plugin Developers:**
+
+1. **Always call `ai::findModels()` with `ioCallbacks` parameter** - it handles everything automatically
+2. **Don't manually validate which approach** - the function does it for you with detailed error messages
+3. **Use correct model key** to access results:
+   - With callbacks: key is `"callback-model"`
+   - Without callbacks: key is the `modelGUID`
+4. **After `ai::findModels()` returns**, file loading differs:
+   - With callbacks: use callbacks to load files (file names are virtual paths)
+   - Without callbacks: use standard file I/O (file names are full disk paths)
+5. **Check logs** - `ai::findModels()` logs which approach was detected and used
+
+**Comparison of Approaches:**
+
+| Feature | Approach 1 (Legacy) | Approach 2 (Hybrid) | Approach 3 (Modern) |
+|---------|---------------------|---------------------|---------------------|
+| GUID Required | Yes | Yes | No |
+| Path Required | Yes | Yes | No |
+| JSON Card Provided | No | No | Yes |
+| IO Callbacks | No | No | Yes |
+| File Discovery | Extension scan | local_files list | local_files list |
+| Filesystem Access | Yes | Yes | No |
+| Best For | Simple models | Complex models on disk | Virtual/encrypted storage |
+
+### FileIOCallbacks Structure
+
+The `FileIOCallbacks` structure provides a complete file I/O abstraction:
+
+```cpp
+//! File I/O callbacks for custom file handling
+//! 
+//! {E9A8C7B4-2F6D-4A1E-9B3C-5D8E7F6A4B2C}
+struct alignas(8) FileIOCallbacks {
+    FileIOCallbacks() {};
+    NVIGI_UID(UID({ 0xe9a8c7b4, 0x2f6d, 0x4a1e,
+        { 0x9b, 0x3c, 0x5d, 0x8e, 0x7f, 0x6a, 0x4b, 0x2c } }), kStructVersion1);
+    
+    //! User-defined context passed to all callbacks
+    void* userData{};
+    
+    //! Open file for reading/writing
+    //! @param userData User context
+    //! @param path File path (virtual or physical)
+    //! @param mode Open mode ("r", "rb", "w", "wb", etc.)
+    //! @return File handle or nullptr on error
+    void* (*open)(void* userData, const char* path, const char* mode){};
+    
+    //! Read from file
+    //! @param userData User context
+    //! @param handle File handle from open()
+    //! @param buffer Destination buffer
+    //! @param size Number of bytes to read
+    //! @return Number of bytes actually read
+    size_t (*read)(void* userData, void* handle, void* buffer, size_t size){};
+    
+    //! Get file size
+    //! @param userData User context
+    //! @param handle File handle from open()
+    //! @return File size in bytes
+    size_t (*size)(void* userData, void* handle){};
+    
+    //! Close file
+    //! @param userData User context
+    //! @param handle File handle to close
+    void (*close)(void* userData, void* handle){};
+    
+    //! NEW MEMBERS GO HERE, BUMP THE VERSION!
+};
+```
 
 > NOTE:
 > Same model GUID can be used by different plugins if they are implementing different backends, for example Whisper GGUF model can be loaded by the `nvigi.plugin.asr.ggml.cuda` and `nvigi.plugin.asr.ggml.cpu` plugins

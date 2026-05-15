@@ -138,7 +138,7 @@ nvigi.plugin.net
 For creating IDs for plugins the easiest way is to use built in tool (packaged in any SDK `[sdk]`, including a pre-packaged one as `[root]` or a locally-packaged one as `[root]/_sdk`) as follows:
 
 ```sh
-[sdk]/bin/x64/nvigi.tool.utils.exe --plugin nvigi.plugin.$name.$backend.$api
+[sdk]/bin/x64/Release/nvigi.tool.utils.exe --plugin nvigi.plugin.$name.$backend.$api
 ```
 which then outputs:
 ```text
@@ -152,7 +152,7 @@ constexpr PluginID kId = {{0x9be1b413, 0xda31, 0x445b,{0xbe, 0x1b, 0x20, 0x30, 0
 When it comes to the interfaces the approach is very similar:
 
 ```sh
-[sdk]/bin/x64/nvigi.tool.utils.exe --interface MyInterface
+[sdk]/bin/x64/Release/nvigi.tool.utils.exe --interface MyInterface
 ```
 which generates unique GUID and new interface that looks like this:
 ```text
@@ -262,7 +262,7 @@ Here are the basic steps for setting up a new plugin performing **completely gen
 * Clone `nvigi.template.generic` folder and rename it to your plugin's name
 * Rename public header `nvigi_template.h` to match your name
 * Search for "tmpl", "template", "Template" and "TEMPLATE" and replace with your name
-* Run `[sdk]/bin/x64/nvigi.tool.utils.exe --plugin nvigi.plugin.$name.$backend{.$api}` to obtain UID and crc24 and paste that in the public header `nvigi_$name.h` under `namespace nvigi::$mynamespace`
+* Run `[sdk]/bin/x64/Release/nvigi.tool.utils.exe --plugin nvigi.plugin.$name.$backend{.$api}` to obtain UID and crc24 and paste that in the public header `nvigi_$name.h` under `namespace nvigi::$mynamespace`
 
 Some examples, `nvigi.plugin.hwi.cuda`, `nvigi.plugin.gpt.ggml.d3d12` etc.
 
@@ -890,7 +890,7 @@ In the following instructions, we follow the directory setup described [here](ht
 
 #### Update Names and GUIDs in Source Files
 
-* Find the NVIGI utility `nvigi.tool.utils.exe` located in `NVIGI-Core\bin\Release_x64`
+* Find the NVIGI utility `nvigi.tool.utils.exe` located in `NVIGI-Core\bin\x64\Release`
 * Open terminal and run `nvigi.tool.utils.exe --plugin nvigi.plugin.mygpt.ggml.$backend` (make sure to replace `mygpt` and `$backend` accordingly)
 * Open `nvigi_mygpt.h`. This is a public header and will be provided to apps.
 
@@ -976,7 +976,7 @@ The example demonstrates the steps to add the `grammar` parameter. Note that thi
 
 If you need to add completely new structure or new interface (structure with functions defining an API) please follow these steps:
 
-* Find the NVIGI utility `nvigi.tool.utils.exe` located in `NVIGI-Core\bin\Release_x64`
+* Find the NVIGI utility `nvigi.tool.utils.exe` located in `NVIGI-Core\bin\x64\Release`
 * Open terminal and run `nvigi.tool.utils.exe --interface MyData` (make sure to replace `MyData` accordingly)
 * Paste the provided code into your `nvigi_mygpt.h` header like for example:
 

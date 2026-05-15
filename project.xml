@@ -9,14 +9,13 @@
 		<package name="catch2" version="2.13.9-7011809a" platforms="windows-x86_64"/>
 	</dependency>
 	<dependency name="cig_scheduler_settings" linkPath="external/cig_scheduler_settings">
-		<package name="cig_scheduler_settings_win64" version="202507021723-ac549a08-main" platforms="windows-x86_64"/>
+		<package name="cig_scheduler_settings_win64" version="202603161727-a5f373c0-main" platforms="windows-x86_64"/>
 	</dependency>
 	<dependency name="cuda" linkPath="external/cuda">
 		<package name="cuda" version="v12.8.0-windows-x64" platforms="windows-x86_64"/>
 	</dependency>
 	<dependency name="libcurl" linkPath="external/libcurl">
 		<package name="libcurl" version="7.80.0+nv1-windows-x86_64" platforms="windows-x86_64"/>
-		<package name="libcurl" version="8.1.2-3-linux-x86_64-static-release" platforms="linux-x86_64"/>
 	</dependency>
 	<dependency name="nlohmann_json" linkPath="external/json">
 		<package name="nlohmann_json" version="3.10.5.1-b440a32a-windows-x86_64" platforms="windows-x86_64"/>
@@ -29,6 +28,5 @@
 	</dependency>
 	<dependency name="zlib" linkPath="external/zlib">
 		<package name="zlib" version="1.3.1_x64-windows" platforms="windows-x86_64"/>
-		<package name="zlib" version="1.3.1_x64-linux" platforms="linux-x86_64"/>
 	</dependency>
 </project>

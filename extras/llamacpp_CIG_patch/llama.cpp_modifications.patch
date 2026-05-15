@@ -1,0 +1,633 @@
+diff --git a/ggml/include/ggml-cuda.h b/ggml/include/ggml-cuda.h
+index 5436c7ef5..038a8498a 100644
+--- a/ggml/include/ggml-cuda.h
++++ b/ggml/include/ggml-cuda.h
+@@ -45,6 +45,14 @@ GGML_BACKEND_API void ggml_backend_cuda_unregister_host_buffer(void * buffer);
+ 
+ GGML_BACKEND_API ggml_backend_reg_t ggml_backend_cuda_reg(void);
+ 
++// Begin NVIDIA Modification
++GGML_BACKEND_API size_t ggml_backend_get_cuda_stream_count(ggml_backend_t backend);
++GGML_BACKEND_API size_t ggml_backend_get_cuda_streams(ggml_backend_t backend,
++                                                      void **        cudaStreams,
++                                                      size_t         cudaStreamsMaxCount);
++// End NVIDIA Modification
++
++
+ #ifdef  __cplusplus
+ }
+ #endif
+diff --git a/ggml/src/ggml-cuda/common.cuh b/ggml/src/ggml-cuda/common.cuh
+index 10817505d..5285b0298 100644
+--- a/ggml/src/ggml-cuda/common.cuh
++++ b/ggml/src/ggml-cuda/common.cuh
+@@ -1370,6 +1370,37 @@ struct ggml_backend_cuda_context {
+     cudaStream_t streams[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = { { nullptr } };
+     cublasHandle_t cublas_handles[GGML_CUDA_MAX_DEVICES] = {nullptr};
+ 
++// Begin NVIDIA modification
++    const size_t scratch_size                                                 = 32 * 1024 * 1024;
++    void *       cublas_scratch[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = { nullptr };
++
++    void * get_scratch_for_stream(int dev, cudaStream_t stream) {
++        for (int i = 0; i < GGML_CUDA_MAX_STREAMS; ++i) {
++            if (streams[dev][i] == stream) {
++                return cublas_scratch[dev][i];
++            }
++        }
++        return nullptr;
++    }
++
++    void set_workspace(int dev, cudaStream_t stream) {
++        void * scratch = get_scratch_for_stream(dev, stream);
++        if (!scratch) {
++            GGML_LOG_ERROR(GGML_CUDA_NAME " error: NO cuBlas scratch for stream\n");
++        }
++        CUBLAS_CHECK(cublasSetWorkspace(cublas_handle(dev), scratch, scratch_size));
++    }
++
++    void set_workspace(cudaStream_t stream) {
++        void * scratch = get_scratch_for_stream(device, stream);
++        if (!scratch) {
++            GGML_LOG_ERROR(GGML_CUDA_NAME " error: NO cuBlas scratch for stream\n");
++        }
++        CUBLAS_CHECK(cublasSetWorkspace(cublas_handle(device), scratch, scratch_size));
++    }
++
++// End NVIDIA modification
++
+     int curr_stream_no = 0;
+ 
+ #ifdef USE_CUDA_GRAPH
+@@ -1437,6 +1468,10 @@ struct ggml_backend_cuda_context {
+         if (streams[device][stream] == nullptr) {
+             ggml_cuda_set_device(device);
+             CUDA_CHECK(cudaStreamCreateWithFlags(&streams[device][stream], cudaStreamNonBlocking));
++
++            // Begin NVIDIA modification
++            CUDA_CHECK(cudaMalloc(&cublas_scratch[device][stream], scratch_size));
++            // End NVIDIA modification
+         }
+         return streams[device][stream];
+     }
+diff --git a/ggml/src/ggml-cuda/fattn.cu b/ggml/src/ggml-cuda/fattn.cu
+index 8256591b2..018e31ab5 100644
+--- a/ggml/src/ggml-cuda/fattn.cu
++++ b/ggml/src/ggml-cuda/fattn.cu
+@@ -320,6 +320,160 @@ enum best_fattn_kernel {
+     BEST_FATTN_KERNEL_MMA_F16  = 400,
+ };
+ 
++// Begin NVidia Modification
++// Match ggml_cuda_flash_attn_ext_mma_f16_case (fattn-mma-f16.cuh): dynamic shared bytes for the MMA FA kernel
++// that would run for this graph, so kernel selection can fall back when nbytes > devices[].smpbo (e.g. CIG).
++static int ggml_cuda_fattn_resolve_ncols1_for_mma(const int cc, const ggml_tensor * Q, const int ncols2) {
++    GGML_ASSERT(ncols2 > 0);
++    if (ncols2 <= 8) {
++        if (turing_mma_available(cc) && Q->ne[1] <= 8 / ncols2) {
++            return 8 / ncols2;
++        }
++    }
++    if (ncols2 <= 16) {
++        if ((turing_mma_available(cc) || amd_wmma_available(cc)) && Q->ne[1] <= 16 / ncols2) {
++            return 16 / ncols2;
++        }
++    }
++    if (ggml_cuda_highest_compiled_arch(cc) == GGML_CUDA_CC_TURING || amd_wmma_available(cc) || Q->ne[1] <= 32 / ncols2) {
++        return 32 / ncols2;
++    }
++    return 64 / ncols2;
++}
++
++static int ggml_cuda_fattn_resolve_ncols2_576_for_mma(
++        const int cc, const ggml_tensor * Q, const ggml_tensor * K, const int64_t gqa_ratio) {
++    if (gqa_ratio == 20) { // GLM 4.7 Flash, mirror ggml_cuda_flash_attn_ext_mma_f16 case 576
++        if (cc >= GGML_CUDA_CC_DGX_SPARK) {
++            return Q->ne[1] <= 8 ? 16 : 4;
++        }
++        if (cc >= GGML_CUDA_CC_BLACKWELL) {
++            return (Q->ne[1] <= 4 && K->ne[1] >= 65536) ? 16 : 4;
++        }
++        if (cc >= GGML_CUDA_CC_ADA_LOVELACE) {
++            return Q->ne[1] <= 4 ? 16 : 4;
++        }
++        if (cc >= GGML_CUDA_CC_TURING) {
++            if (Q->ne[1] <= 4) {
++                return K->ne[1] <= 16384 ? 16 : 32;
++            }
++            return 4;
++        }
++        return 4;
++    }
++    if (gqa_ratio % 16 == 0) {
++        return 16;
++    }
++    return 4;
++}
++
++static int ggml_cuda_fattn_resolve_ncols2_for_mma(
++        const int cc,
++        const ggml_tensor * KQV,
++        const ggml_tensor * Q,
++        const ggml_tensor * K,
++        const ggml_tensor * V,
++        const ggml_tensor * mask,
++        const int DKQ) {
++    float max_bias = 0.0f;
++    memcpy(&max_bias, (const float *) KQV->op_params + 1, sizeof(float));
++
++    bool use_gqa_opt = mask && max_bias == 0.0f && K->ne[1] % FATTN_KQ_STRIDE == 0;
++    for (const ggml_tensor * t : { Q, K, V, mask }) {
++        if (t == nullptr || ggml_is_quantized(t->type)) {
++            continue;
++        }
++        for (size_t i = 1; i < GGML_MAX_DIMS; ++i) {
++            if (t->nb[i] % 16 != 0) {
++                use_gqa_opt = false;
++                break;
++            }
++        }
++    }
++
++    GGML_ASSERT(Q->ne[2] % K->ne[2] == 0);
++    const int gqa_ratio = (int) (Q->ne[2] / K->ne[2]);
++
++    if (DKQ == 576) {
++        GGML_ASSERT(V->ne[0] == 512);
++        GGML_ASSERT(mask && max_bias == 0.0f);
++        return ggml_cuda_fattn_resolve_ncols2_576_for_mma(cc, Q, K, gqa_ratio);
++    }
++
++    if (cc == GGML_CUDA_CC_VOLTA) {
++        if (use_gqa_opt && gqa_ratio % 8 == 0) {
++            return 8;
++        }
++        if (use_gqa_opt && gqa_ratio % 4 == 0) {
++            return 4;
++        }
++        if (use_gqa_opt && gqa_ratio % 2 == 0) {
++            return 2;
++        }
++        return 1;
++    }
++
++    if (use_gqa_opt && gqa_ratio > 4) {
++        return 8;
++    }
++    if (use_gqa_opt && gqa_ratio > 2) {
++        return 4;
++    }
++    if (use_gqa_opt && gqa_ratio > 1) {
++        return 2;
++    }
++    return 1;
++}
++
++static size_t ggml_cuda_fattn_mma_estimated_dynamic_shmem_bytes(const int device, const ggml_tensor * KQV) {
++    const ggml_tensor * Q    = KQV->src[0];
++    const ggml_tensor * K    = KQV->src[1];
++    const ggml_tensor * V    = KQV->src[2];
++    const ggml_tensor * mask = KQV->src[3];
++
++    const int cc            = ggml_cuda_info().devices[device].cc;
++    const int warp_size_host = ggml_cuda_info().devices[device].warp_size;
++
++    const int DKQ = (int) Q->ne[0];
++    const int DV  = (int) V->ne[0];
++
++    const int ncols2 = ggml_cuda_fattn_resolve_ncols2_for_mma(cc, KQV, Q, K, V, mask, DKQ);
++    const int ncols1 = ggml_cuda_fattn_resolve_ncols1_for_mma(cc, Q, ncols2);
++    const int ncols  = ncols1 * ncols2;
++
++    const int  nthreads       = ggml_cuda_fattn_mma_get_nthreads(DKQ, DV, ncols, cc);
++    const int  nbatch_fa      = ggml_cuda_fattn_mma_get_nbatch_fa(DKQ, DV, ncols, cc);
++    const int  nbatch_K2      = ggml_cuda_fattn_mma_get_nbatch_K2(DKQ, DV, ncols, cc);
++    const int  nbatch_V2      = ggml_cuda_fattn_mma_get_nbatch_V2(DKQ, DV, ncols, cc);
++    const int  nbatch_combine = ggml_cuda_fattn_mma_get_nbatch_combine(DKQ, DV, ncols, cc);
++    const bool Q_in_reg       = ggml_cuda_fattn_mma_get_Q_in_reg(DKQ, DV, ncols, cc);
++    const int  nstages        = ggml_cuda_fattn_mma_get_nstages(DKQ, DV, ncols1, ncols2, cc);
++
++    const int cols_per_warp = std::min(ncols, get_cols_per_warp(cc));
++    const int nwarps        = nthreads / warp_size_host;
++
++    // sizeof(half2) == 4 (same as fattn-mma-f16.cuh)
++    const size_t nbytes_shared_KV_1stage = (size_t) nbatch_fa * (size_t) std::max(nbatch_K2 + 4, nbatch_V2 + 4) * 4;
++    const size_t nbytes_shared_KV_2stage = (size_t) nbatch_fa * (size_t) (nbatch_K2 + 4 + nbatch_V2 + 4) * 4;
++    const size_t nbytes_shared_Q           = (size_t) ncols * (size_t) (DKQ / 2 + 4) * 4;
++    const size_t nbytes_shared_mask        = (size_t) ncols1 * (size_t) (nbatch_fa / 2 + 4) * 4;
++    const size_t nbytes_shared_combine     = (size_t) nwarps * (size_t) cols_per_warp * (size_t) (nbatch_combine + 4) * 4;
++
++    const size_t nbytes_shared_KV = nstages <= 1 ? nbytes_shared_KV_1stage : nbytes_shared_KV_2stage;
++
++    const size_t nbytes_shared_total = std::max(
++        nbytes_shared_combine,
++        Q_in_reg ? std::max(nbytes_shared_Q, nbytes_shared_KV + nbytes_shared_mask)
++                 : nbytes_shared_Q + nbytes_shared_KV + nbytes_shared_mask);
++
++    return nbytes_shared_total;
++}
++
++static bool ggml_cuda_fattn_mma_exceeds_device_shmem_limit(const int device, const ggml_tensor * KQV) {
++    return ggml_cuda_fattn_mma_estimated_dynamic_shmem_bytes(device, KQV) > ggml_cuda_info().devices[device].smpbo;
++}
++// End NVidia Modification
++
+ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const ggml_tensor * dst) {
+ #ifndef FLASH_ATTN_AVAILABLE
+     GGML_UNUSED(device); GGML_UNUSED(dst);
+@@ -449,6 +603,11 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
+                 return BEST_FATTN_KERNEL_VEC;
+             }
+         }
++        // Begin NVidia Modification
++        if (ggml_cuda_fattn_mma_exceeds_device_shmem_limit(device, KQV)) {
++            return BEST_FATTN_KERNEL_TILE;
++        }
++        // End NVidia Modification
+         return BEST_FATTN_KERNEL_MMA_F16;
+     }
+ 
+@@ -464,6 +623,11 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
+         if (Q->ne[1] * gqa_ratio_eff <= 16) {
+             return BEST_FATTN_KERNEL_TILE; // On Volta tensor cores are only faster for sufficiently large matrices.
+         }
++        // Begin NVidia Modification
++        if (ggml_cuda_fattn_mma_exceeds_device_shmem_limit(device, KQV)) {
++            return BEST_FATTN_KERNEL_TILE;
++        }
++        // End NVidia Modification
+         return BEST_FATTN_KERNEL_MMA_F16;
+     }
+ 
+@@ -497,6 +661,11 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
+         if (Q->ne[1] * gqa_ratio_eff <= 8) {
+             return BEST_FATTN_KERNEL_TILE; // AMD WMMA is only faster if the full tile width of 16 can be utilized.
+         }
++        // Begin NVidia Modification
++        if (ggml_cuda_fattn_mma_exceeds_device_shmem_limit(device, KQV)) {
++            return BEST_FATTN_KERNEL_TILE;
++        }
++        // End NVidia Modification
+         return BEST_FATTN_KERNEL_MMA_F16;
+     }
+ 
+@@ -507,6 +676,11 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
+         //   hsk=64  (gqa=4): MMA wins at eff >= 128 (+11%)
+         //   hsk=128 (gqa=4): MMA wins at eff >= 128 (+4%)
+         if (eff_nq >= (GGML_CUDA_CC_IS_CDNA1(cc) && Q->ne[0] == 64 ? 64 : 128)) {
++            // Begin NVidia Modification
++            if (ggml_cuda_fattn_mma_exceeds_device_shmem_limit(device, KQV)) {
++                return BEST_FATTN_KERNEL_TILE;
++            }
++            // End NVidia Modification
+             return BEST_FATTN_KERNEL_MMA_F16;
+         }
+         // Fall through to tile kernel for small effective batch sizes.
+diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
+index 8d21b2267..b2ab40aba 100644
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -605,6 +605,9 @@ ggml_backend_cuda_context::~ggml_backend_cuda_context() {
+         for (int j = 0; j < GGML_CUDA_MAX_STREAMS; ++j) {
+             if (streams[i][j] != nullptr) {
+                 CUDA_CHECK(cudaStreamDestroy(streams[i][j]));
++                // Begin NVIDIA modification
++                CUDA_CHECK(cudaFree(cublas_scratch[i][j]));
++                // End NVIDIA modification
+             }
+         }
+         if (cublas_handles[i] != nullptr) {
+@@ -1521,6 +1524,10 @@ static void ggml_cuda_op_mul_mat_cublas(
+         const float beta_f32  = 0.0f;
+ 
+         CUBLAS_CHECK(cublasSetStream(ctx.cublas_handle(id), stream));
++        // Begin NVIDIA modification
++        ctx.set_workspace(id, stream);
++        // End NVIDIA modification
++
+         CUBLAS_CHECK(
+             cublasGemmEx(ctx.cublas_handle(id), CUBLAS_OP_T, CUBLAS_OP_N,
+                     row_diff, src1_ncols, ne10,
+@@ -1555,6 +1562,9 @@ static void ggml_cuda_op_mul_mat_cublas(
+         const half * src1_ptr = src1->type == GGML_TYPE_F16 ? (const half *) src1_ddf_i : src1_as_f16.get();
+ 
+         CUBLAS_CHECK(cublasSetStream(ctx.cublas_handle(id), stream));
++        // Begin NVIDIA modification
++        ctx.set_workspace(id, stream);
++        // End NVIDIA modification
+ 
+         const auto & force_compute_type = ggml_cuda_cublas_get_force_compute_type();
+ 
+@@ -1615,6 +1625,9 @@ static void ggml_cuda_op_mul_mat_cublas(
+         const float beta = 0.0f;
+ 
+         CUBLAS_CHECK(cublasSetStream(ctx.cublas_handle(id), stream));
++        // Begin NVIDIA modification
++        ctx.set_workspace(id, stream);
++        // End NVIDIA modification
+         CUBLAS_CHECK(
+             cublasSgemm(ctx.cublas_handle(id), CUBLAS_OP_T, CUBLAS_OP_N,
+                     row_diff, src1_ncols, ne10,
+@@ -2052,6 +2065,9 @@ static void ggml_cuda_mul_mat_batched_cublas_impl(ggml_backend_cuda_context & ct
+     const int64_t ne_dst = ggml_nelements(dst);
+     cudaStream_t main_stream = ctx.stream();
+     CUBLAS_CHECK(cublasSetStream(ctx.cublas_handle(), main_stream));
++    // Begin NVIDIA modification
++    ctx.set_workspace(main_stream);
++    // End NVIDIA modification
+ 
+     float * dst_ddf = (float *) dst->data;
+     const size_t ts_src1 = ggml_type_size(src1->type);
+@@ -5479,4 +5495,42 @@ ggml_backend_t ggml_backend_cuda_init(int device) {
+     return cuda_backend;
+ }
+ 
++size_t ggml_backend_get_cuda_stream_count(ggml_backend_t backend) {
++    if (!ggml_backend_is_cuda(backend)) {
++        return 0;
++    }
++
++    ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
++    size_t                      count    = 0;
++
++    for (int device = 0; device != GGML_CUDA_MAX_DEVICES; device++) {
++        for (int stream = 0; stream != GGML_CUDA_MAX_STREAMS; stream++) {
++            if (cuda_ctx->streams[device][stream] != nullptr) {
++                count++;
++            }
++        }
++    }
++    return count;
++}
++
++size_t ggml_backend_get_cuda_streams(ggml_backend_t backend, void ** cudaStreams, size_t cudaStreamsMaxCount) {
++    if (!ggml_backend_is_cuda(backend)) {
++        return 0;
++    }
++
++    ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
++
++    size_t copied_count = 0;
++    for (int device = 0; device != GGML_CUDA_MAX_DEVICES && copied_count != cudaStreamsMaxCount; device++) {
++        for (int stream = 0; stream != GGML_CUDA_MAX_STREAMS && copied_count != cudaStreamsMaxCount; stream++) {
++            if (cuda_ctx->streams[device][stream] != nullptr) {
++                cudaStreams[copied_count] = cuda_ctx->streams[device][stream];
++                copied_count++;
++            }
++        }
++    }
++
++    return copied_count;
++}
++
+ GGML_BACKEND_DL_IMPL(ggml_backend_cuda_reg)
+diff --git a/include/llama.h b/include/llama.h
+index 2ea226726..96549b5f5 100644
+--- a/include/llama.h
++++ b/include/llama.h
+@@ -1561,6 +1561,14 @@ extern "C" {
+             ggml_opt_epoch_callback   callback_train,
+             ggml_opt_epoch_callback   callback_eval);
+ 
++// Begin NVIDIA Modification
++    LLAMA_API size_t llama_get_cuda_stream_count(struct llama_context * ctx);
++    LLAMA_API size_t llama_get_cuda_streams(struct llama_context * ctx,
++                                            void **                cudaStreams,
++                                            size_t                 cudaStreamsMaxCount);
++// End NVIDIA Modification
++
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 71a59395e..8087c8985 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -17,6 +17,12 @@
+ #include <limits>
+ #include <stdexcept>
+ 
++// Begin NVIDIA Modification
++#if GGML_USE_CUDA
++#    include "ggml-cuda.h"
++#endif
++// End NVIDIA Modification
++
+ //
+ // llama_context
+ //
+@@ -3817,6 +3823,36 @@ void llama_opt_epoch(
+         callback_eval);
+ }
+ 
++// Begin NVidia Modification
++//
++// NVIGI
++//
++size_t llama_context::llama_get_cuda_stream_count() {
++    size_t stream_count = 0;
++
++#if GGML_USE_CUDA
++    for (auto & backend : backends) {
++        stream_count += ggml_backend_get_cuda_stream_count(backend.get());
++    }
++#endif
++
++    return stream_count;
++}
++
++size_t llama_context::llama_get_cuda_streams(void ** cudaStreams,
++                                             size_t cudaStreamsMaxCount) {
++    size_t next_index = 0;
++
++#if GGML_USE_CUDA
++    for (auto & backend : backends) {
++        next_index += ggml_backend_get_cuda_streams(backend.get(), cudaStreams, cudaStreamsMaxCount - next_index);
++    }
++#endif
++
++    return next_index;
++}
++// End NVidia Modification
++
+ //
+ // ext
+ //
+diff --git a/src/llama-context.h b/src/llama-context.h
+index 92d1b0cf9..9ae6b0cca 100644
+--- a/src/llama-context.h
++++ b/src/llama-context.h
+@@ -207,6 +207,12 @@ struct llama_context {
+             int64_t                          ndata_in_loop,
+             int64_t                          t_loop_start);
+ 
++    // Begin NVidia Modification
++    // For NVIGI
++    size_t llama_get_cuda_stream_count();
++    size_t llama_get_cuda_streams(void ** cudaStreams, size_t cudaStreamsMaxCount);
++    // End NVidia Modification
++
+ private:
+     //
+     // output
+diff --git a/src/llama.cpp b/src/llama.cpp
+index dfe30ce8f..945ab387e 100644
+--- a/src/llama.cpp
++++ b/src/llama.cpp
+@@ -26,6 +26,12 @@
+ #include <stdexcept>
+ #include <vector>
+ 
++// Begin NVIDIA Modification
++#if GGML_USE_CUDA
++#    include "ggml-cuda.h"
++#endif
++// End NVIDIA Modification
++
+ #if defined(_MSC_VER)
+ #pragma warning(disable: 4244 4267) // possible loss of data
+ #endif
+@@ -576,3 +582,12 @@ const char * llama_print_system_info(void) {
+     return s.c_str();
+ }
+ 
++// Begin NVIDIA Modification
++size_t llama_get_cuda_stream_count(struct llama_context * ctx) {
++    return ctx->llama_get_cuda_stream_count();
++}
++
++size_t llama_get_cuda_streams(struct llama_context * ctx, void ** cudaStreams, size_t cudaStreamsMaxCount) {
++    return ctx->llama_get_cuda_streams(cudaStreams, cudaStreamsMaxCount);
++}
++// End NVIDIA Modification
+diff --git a/tools/llama-bench/CMakeLists.txt b/tools/llama-bench/CMakeLists.txt
+index 93d6a3aa2..49c06c174 100644
+--- a/tools/llama-bench/CMakeLists.txt
++++ b/tools/llama-bench/CMakeLists.txt
+@@ -3,6 +3,65 @@ add_executable(${TARGET} llama-bench.cpp)
+ target_link_libraries(${TARGET} PRIVATE llama-common llama ${CMAKE_THREAD_LIBS_INIT})
+ target_compile_features(${TARGET} PRIVATE cxx_std_17)
+ 
++# Add custom libraries for Windows
++if(WIN32)
++    find_package(CUDAToolkit QUIET)
++    if(CUDAToolkit_FOUND AND TARGET CUDA::cupti)
++        target_link_libraries(${TARGET} PRIVATE
++            CUDA::cuda_driver
++            CUDA::cudart
++            CUDA::cupti
++            d3d12.lib
++            dxgi.lib
++        )
++
++        # Copy cupti64_*.dll next to the executable (toolkit ships under extras/CUPTI/lib64).
++        # CUDAToolkit_ROOT_DIR is only set on newer CMake; derive root when missing.
++        set(_CUPTI_CUDA_TOOLKIT_ROOT "${CUDAToolkit_ROOT_DIR}")
++        if(NOT _CUPTI_CUDA_TOOLKIT_ROOT AND DEFINED ENV{CUDA_PATH})
++            set(_CUPTI_CUDA_TOOLKIT_ROOT "$ENV{CUDA_PATH}")
++        endif()
++        if(NOT _CUPTI_CUDA_TOOLKIT_ROOT AND CUDAToolkit_BIN_DIR)
++            get_filename_component(_CUPTI_CUDA_TOOLKIT_ROOT "${CUDAToolkit_BIN_DIR}" DIRECTORY)
++        endif()
++        file(GLOB CUPTI_DLL_CANDIDATES
++            "${_CUPTI_CUDA_TOOLKIT_ROOT}/extras/CUPTI/lib64/cupti64*.dll"
++            "${_CUPTI_CUDA_TOOLKIT_ROOT}/extras/CUPTI/lib/cupti64*.dll"
++            "${_CUPTI_CUDA_TOOLKIT_ROOT}/lib/cupti64*.dll"
++            "${CUDAToolkit_BIN_DIR}/cupti64*.dll"
++        )
++        if(CUPTI_DLL_CANDIDATES)
++            list(SORT CUPTI_DLL_CANDIDATES COMPARE STRING ORDER DESCENDING)
++            list(GET CUPTI_DLL_CANDIDATES 0 CUPTI_DLL_PATH)
++            message(STATUS "Found CUPTI DLL: ${CUPTI_DLL_PATH}")
++            add_custom_command(TARGET ${TARGET} POST_BUILD
++                COMMAND ${CMAKE_COMMAND} -E copy_if_different
++                    "${CUPTI_DLL_PATH}"
++                    "$<TARGET_FILE_DIR:${TARGET}>/"
++                COMMENT "Copying CUPTI DLL next to llama-bench"
++            )
++        else()
++            message(WARNING "CUPTI DLL not found under CUDA toolkit (resolved root='${_CUPTI_CUDA_TOOLKIT_ROOT}'). Searched extras/CUPTI/lib64, extras/CUPTI/lib, lib, and bin for cupti64*.dll. Install the full CUDA Toolkit with CUPTI, or copy cupti64_*.dll next to llama-bench.exe manually.")
++        endif()
++    elseif(CUDAToolkit_FOUND AND NOT TARGET CUDA::cupti)
++        message(WARNING "CUDA toolkit found but CUDA::cupti target is missing (CUPTI). llama-bench may fail to link.")
++    endif()
++
++    # Copy cig_scheduler_settings.dll to the output directory
++    set(CIG_SCHEDULER_DLL "${CMAKE_SOURCE_DIR}/../cig_scheduler_settings.dll")
++    if(EXISTS "${CIG_SCHEDULER_DLL}")
++        message(STATUS "Found CIG Scheduler DLL: ${CIG_SCHEDULER_DLL}")
++        add_custom_command(TARGET ${TARGET} POST_BUILD
++            COMMAND ${CMAKE_COMMAND} -E copy_if_different
++                "${CIG_SCHEDULER_DLL}"
++                "$<TARGET_FILE_DIR:${TARGET}>/"
++            COMMENT "Copying cig_scheduler_settings.dll to output directory"
++        )
++    else()
++        message(WARNING "cig_scheduler_settings.dll not found at ${CIG_SCHEDULER_DLL}")
++    endif()
++endif()
++
+ if(LLAMA_TOOLS_INSTALL)
+     install(TARGETS ${TARGET} RUNTIME)
+ endif()
+diff --git a/tools/llama-bench/llama-bench.cpp b/tools/llama-bench/llama-bench.cpp
+index 07198fb16..4cc8915a9 100644
+--- a/tools/llama-bench/llama-bench.cpp
++++ b/tools/llama-bench/llama-bench.cpp
+@@ -26,6 +26,8 @@
+ #include "ggml.h"
+ #include "llama.h"
+ 
++#include "..\..\CIG_compatibility_checker.h"
++
+ #ifdef _WIN32
+ #    define WIN32_LEAN_AND_MEAN
+ #    ifndef NOMINMAX
+@@ -2137,6 +2139,14 @@ static std::unique_ptr<printer> create_printer(output_formats format) {
+ }
+ 
+ int main(int argc, char ** argv) {
++// Begin NVidia Modification
++    // CIGCompatibilityChecker::init creates a D3D queue and then creates a CIG context that will run in parallel with it.
++    // It then inits CUPTI to register a callback on each CUDA call.
++    // The callback checks each CUDA call is on the CIG context, checks it
++    // respects the CIG shmem limit, and logs which priority level it was run on.
++    CIGCompatibilityChecker::init(true);
++//End NVidia Modification
++
+     std::setlocale(LC_NUMERIC, "C");
+     // try to set locale for unicode characters in markdown
+     std::setlocale(LC_CTYPE, ".UTF-8");
+@@ -2266,6 +2276,21 @@ int main(int argc, char ** argv) {
+             return 1;
+         }
+ 
++// Begin NVidia Modification
++        // Ask llama for all the cuda_streams it is going to use and set their CIG priority
++        std::vector<cudaStream_t> cuda_streams;
++        size_t stream_count = llama_get_cuda_stream_count(ctx);
++        cuda_streams.resize(stream_count);
++        llama_get_cuda_streams(ctx, (void **) cuda_streams.data(),
++                               stream_count);
++
++        CigWorkloadType workloadType = CIG_WORKLOAD_BACKGROUND;
++        for (int i = 0; i != stream_count; i++)
++        {
++            CIGCompatibilityChecker::sched.StreamSetWorkloadType(cuda_streams[i], workloadType);
++        }
++// End NVidia Modification
++
+         test t(inst, lmodel, ctx);
+ 
+         llama_memory_clear(llama_get_memory(ctx), false);
+@@ -2427,5 +2452,9 @@ int main(int argc, char ** argv) {
+ 
+     llama_backend_free();
+ 
++// Begin NVidia Modification
++    CIGCompatibilityChecker::check();
++// End NVidia Modification
++
+     return 0;
+ }

@@ -49,8 +49,6 @@ group "plugins/template"
 		-- 
 		-- filter {"system:windows"}
 		-- 	links { "cuda.lib", "cudart.lib" }
-		-- filter {"system:linux"}
-		-- 	links { "cuda", "cudart" }
 		-- filter {}
 
 		-- --------------------------------------------------------------------
@@ -79,8 +77,6 @@ group "plugins/template"
 		-- 
 		-- filter {"system:windows"}
 		-- 	links { "vulkan-1.lib" }
-		-- filter {"system:linux"}
-		-- 	links { "vulkan" }
 		-- filter {}
 
 		-- ====================================================================

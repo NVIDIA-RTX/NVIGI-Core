@@ -74,7 +74,7 @@ InterfaceInfo getInterfaceInfo()
 // {53FAF63E-8B92-477C-94B5-B60B4B9DBF48}
 struct alignas(8) PluginInfo {
     PluginInfo() {}; 
-    NVIGI_UID(UID({ 0x53faf63e, 0x8b92, 0x477c,{ 0x94, 0xb5, 0xb6, 0xb, 0x4b, 0x9d, 0xbf, 0x48 } }), kStructVersion1)
+    NVIGI_UID(UID({ 0x53faf63e, 0x8b92, 0x477c,{ 0x94, 0xb5, 0xb6, 0xb, 0x4b, 0x9d, 0xbf, 0x48 } }), kStructVersion2)
     PluginInfo(const PluginInfo& other)
     {
         id = other.id;
@@ -100,6 +100,9 @@ struct alignas(8) PluginInfo {
     types::string author{};
     types::string build{};
     types::vector<InterfaceInfo> interfaces{};
+
+    //! v2+ members go here
+    SystemFlags minSystemFlags{};
 };
 
 NVIGI_VALIDATE_STRUCT(PluginInfo)

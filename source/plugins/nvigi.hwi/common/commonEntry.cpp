@@ -7,11 +7,8 @@
 #include "source/core/nvigi.log/log.h"
 #include "source/core/nvigi.exception/exception.h"
 #include "source/core/nvigi.plugin/plugin.h"
-#include "source/plugins/nvigi.hwi/cuda/versions.h"
+#include "source/plugins/nvigi.hwi/common/versions.h"
 #include "_artifacts/gitVersion.h"
-
-#include <cuda.h>
-#include <cuda_runtime.h>
 
 #include "nvigi_hwi_common.h"
 

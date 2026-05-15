@@ -13,13 +13,8 @@
 #include <d3dkmthk.h>
 #include <d3dkmdt.h>
 #include <dxgi1_6.h>
-#include "external/nvapi/nvapi.h"
+#include "nvapi.h"
 #include "external/amd-ags/ags_lib/inc/amd_ags.h"
-#else
-#include <array>
-#include <memory>
-#include <regex>
-#include <sys/utsname.h>
 #endif
 #include <bitset>
 
@@ -43,11 +38,7 @@ bool verifyEmbeddedSignature(const wchar_t* pathToFile);
 namespace system
 {
 
-#ifdef NVIGI_LINUX
-Result downgradePrivileges() { return kResultOk; };
-Result restorePrivileges() { return kResultOk; };
-#else // NVIGI_WINDOWS
-
+#ifdef NVIGI_WINDOWS
 //! Based on https://learn.microsoft.com/en-us/windows/win32/secauthz/enabling-and-disabling-privileges-in-c--
 //! 
 //! If process is running with elevated privileges we downgrade them temporarily
@@ -709,19 +700,30 @@ bool getSystemCaps(nvigi::VendorId forceAdapterId, uint32_t forceArchitecture, S
                         NVAPI_VALIDATE_RF(NvAPI_GPU_GetRamBusWidth(nvGPUHandle[gpu], &busWidth));
 
                         // grab the boost (peak) frequencies
-                        NV_GPU_CLOCK_FREQUENCIES clkFreqs = {};
-                        clkFreqs.version = NV_GPU_CLOCK_FREQUENCIES_VER;
-                        clkFreqs.ClockType = NV_GPU_CLOCK_FREQUENCIES_BOOST_CLOCK;
-                        NVAPI_VALIDATE_RF(NvAPI_GPU_GetAllClockFrequencies(nvGPUHandle[gpu], &clkFreqs));
+                        NV_GPU_CLOCK_FREQUENCIES structClkFreqs = {};
+                        NV_GPU_CLOCK_FREQUENCIES* clkFreqs{};
+                        {
+                            structClkFreqs.version = NV_GPU_CLOCK_FREQUENCIES_VER;
+                            structClkFreqs.ClockType = NV_GPU_CLOCK_FREQUENCIES_BOOST_CLOCK;
+                            auto r = NvAPI_GPU_GetAllClockFrequencies(nvGPUHandle[gpu], &structClkFreqs);
+                            if (r != NVAPI_OK)
+                            {
+                                NVIGI_LOG_WARN("NvAPI_GPU_GetAllClockFrequencies failed with error %d", r);
+                            }
+                            else
+                            {
+                                clkFreqs = &structClkFreqs;
+                            }
+                        }
 
                         // "frequency" is in kHz
-                        adapter->memoryBandwidthGBPS = (float)clkFreqs.domain[NVAPI_GPU_PUBLIC_CLOCK_MEMORY].frequency * busWidth / 8000000.0f;
+                        adapter->memoryBandwidthGBPS = (float)(clkFreqs ? clkFreqs->domain[NVAPI_GPU_PUBLIC_CLOCK_MEMORY].frequency : 0) * busWidth / 8000000.0f;
 
                         // compute a very crude estimate of GFLOPs by assuming we can do an FMAD/clk/core
                         NvU32 coreCount;
                         NVAPI_VALIDATE_RF(NvAPI_GPU_GetGpuCoreCount(nvGPUHandle[gpu], &coreCount));
                         adapter->coreCount = (uint32_t)coreCount;
-                        adapter->shaderGFLOPS = (float)clkFreqs.domain[NVAPI_GPU_PUBLIC_CLOCK_GRAPHICS].frequency * adapter->coreCount * 2.0f / 1000000.0f;
+                        adapter->shaderGFLOPS = (float)(clkFreqs ? clkFreqs->domain[NVAPI_GPU_PUBLIC_CLOCK_GRAPHICS].frequency : 0) * adapter->coreCount * 2.0f / 1000000.0f;
 
                         // SM count (Shader SubPipes)
                         NvU32 smCount{};
@@ -740,8 +742,8 @@ bool getSystemCaps(nvigi::VendorId forceAdapterId, uint32_t forceArchitecture, S
                         }
 
                         // Store clock frequencies in MHz
-                        adapter->graphicsBoostClockMHz = clkFreqs.domain[NVAPI_GPU_PUBLIC_CLOCK_GRAPHICS].frequency / 1000;
-                        adapter->memoryClockMHz = clkFreqs.domain[NVAPI_GPU_PUBLIC_CLOCK_MEMORY].frequency / 1000;
+                        adapter->graphicsBoostClockMHz = (clkFreqs ? clkFreqs->domain[NVAPI_GPU_PUBLIC_CLOCK_GRAPHICS].frequency : 0) / 1000;
+                        adapter->memoryClockMHz = (clkFreqs ? clkFreqs->domain[NVAPI_GPU_PUBLIC_CLOCK_MEMORY].frequency : 0) / 1000;
 
                         // PCIe width
                         NvU32 pcieWidth{};
@@ -847,61 +849,6 @@ bool getSystemCaps(nvigi::VendorId forceAdapterId, uint32_t forceArchitecture, S
     {
         FreeLibrary(modGDI32);
     }
-#else
-    // Linux
-    auto getGPUInfo = [](const char* cmd, std::string& result)->bool
-    {
-        std::array<char, 128> buffer;
-        std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
-        if (!pipe) {
-            return false;
-        }
-        while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-            result += buffer.data();
-        }
-        return true;
-    };
-    std::string gpuArchitecture;
-    if (getGPUInfo("nvidia-smi --query-gpu=name --format=csv,noheader,nounits", gpuArchitecture))
-    {
-        info->adapterCount = 1;
-        std::string memorySize;
-        getGPUInfo("nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits", memorySize);
-        std::string driverVersion;
-        getGPUInfo("nvidia-smi --query-gpu=driver_version --format=csv,noheader", driverVersion);        
-        gpuArchitecture = std::regex_replace(gpuArchitecture, std::regex(R"(\n)"), "");
-        memorySize = std::regex_replace(memorySize, std::regex(R"(\n)"), "");
-        std::regex versionRegex(R"((\d+)\.(\d+))");
-        std::smatch versionMatch;
-        if (std::regex_search(driverVersion, versionMatch, versionRegex) && versionMatch.size() > 2) {
-            info->driverVersion.major = std::stoi(versionMatch.str(1));
-            info->driverVersion.minor = std::stoi(versionMatch.str(2));
-        }
-
-        info->adapters[0] = new Adapter;
-
-        //NV_GPU_ARCHITECTURE_GP100 = 0x00000130,
-        //NV_GPU_ARCHITECTURE_GV100 = 0x00000140,
-        //NV_GPU_ARCHITECTURE_GV110 = 0x00000150,
-        //NV_GPU_ARCHITECTURE_TU100 = 0x00000160,
-        //NV_GPU_ARCHITECTURE_GA100 = 0x00000170,
-        //NV_GPU_ARCHITECTURE_AD100 = 0x00000190,
-        if(gpuArchitecture.find("40") != std::string::npos)
-        {
-            info->adapters[0]->architecture = 0x00000190;
-        }
-        else if(gpuArchitecture.find("30") != std::string::npos)
-        {
-            info->adapters[0]->architecture = 0x00000170;
-        }
-        else if(gpuArchitecture.find("20") != std::string::npos)
-        {
-            info->adapters[0]->architecture = 0x00000160;
-        }
-        info->adapters[0]->vendor = nvigi::VendorId::eNVDA;
-        info->adapters[0]->dedicatedMemoryInMB = std::atoll(memorySize.c_str());
-        NVIGI_LOG_INFO("GPU Architecture: 0x%x - driver %s - memory size %lluMB", info->adapters[0]->architecture, extra::toStr(info->driverVersion).c_str(), info->adapters[0]->dedicatedMemoryInMB);
-    }    
 #endif
     if (forceAdapterId != nvigi::VendorId::eAny)
     {
@@ -944,11 +891,7 @@ using PFun_NtSetTimerResolution = NTSTATUS(NTAPI*)(ULONG DesiredResolution, BOOL
 bool getOSVersionAndUpdateTimerResolution(SystemCaps* caps)
 {
     caps->osVersion = {};
-#ifdef NVIGI_LINUX
-    struct utsname data;
-    uname(&data);
-    return true;
-#else
+#ifdef NVIGI_WINDOWS
     // In Win8, the GetVersion[Ex][AW]() functions were all deprecated in favour of using
     // other more dumbed down functions such as IsWin10OrGreater(), isWinVersionOrGreater(),
     // VerifyVersionInfo(), etc.  Unfortunately these have a couple huge issues:
@@ -1137,25 +1080,6 @@ Result getVRAMStats(uint32_t adapterIndex, VRAMUsage** _usage)
         NVIGI_LOG_ERROR("Unable to obtain IDXGIAdapter3 for adater at index %u", adapterIndex);
         return kResultInvalidState;
     }
-#else
-    // Linux
-    auto getGPUInfo = [](const char* cmd, std::string& result)->bool
-    {
-            std::array<char, 128> buffer;
-            std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
-            if (!pipe) {
-                return false;
-            }
-            while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-                result += buffer.data();
-            }
-            return true;
-    };
-    std::string memorySize("0");
-    getGPUInfo("nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits", memorySize);
-    memorySize = std::regex_replace(memorySize, std::regex(R"(\n)"), "");
-    usage.currentUsageMB = std::atoll(memorySize.c_str());
-    usage.budgetMB = s_caps.adapters[adapterIndex]->dedicatedMemoryInMB;
 #endif
     return kResultOk;
 }

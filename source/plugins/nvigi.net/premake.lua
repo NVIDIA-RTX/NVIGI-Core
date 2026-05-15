@@ -1,7 +1,9 @@
 group "plugins/networking"
 
 	project "nvigi.plugin.net"
-		kind "SharedLib"
+		filter "platforms:x64"
+			kind "SharedLib"
+		filter {}
 		
 		pluginBasicSetup("net")
 
@@ -27,13 +29,5 @@ group "plugins/networking"
 			links {"zlib.lib"}
 		filter "system:windows"
 			links {"libcurl.lib", "ws2_32.lib", "wldap32.lib","advapi32.lib","kernel32.lib","comdlg32.lib","crypt32.lib","normaliz.lib"}
-		filter{}
-
-		filter {"system:linux", "configurations:Debug"}
-			libdirs { externaldir .."/openssl/debug/lib", externaldir .."/zlib/debug/lib", externaldir .."/libcurl/lib"}
-		filter {"system:linux", "configurations:not Debug"}
-			libdirs { externaldir .."/openssl/lib", externaldir .."/zlib/lib", externaldir .."/libcurl/lib"}
-		filter "system:linux"
-			links {"curl", "ssl", "crypto", "z", "dl", "pthread", "rt"}
 		filter{}
 group ""

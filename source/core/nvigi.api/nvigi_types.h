@@ -138,6 +138,8 @@ NVIGI_VALIDATE_STRUCT(PluginSpec)
 
 //! System bit flags
 //! 
+//! NOTE: please update toStr and toWStr methods in extra.h after adding flags
+//! 
 enum class SystemFlags : uint64_t
 {
     eNone = 0x00,

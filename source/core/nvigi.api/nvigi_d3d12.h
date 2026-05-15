@@ -68,8 +68,9 @@ using PFun_destroyResource = void(ID3D12Resource* pResource, void* userContext);
 enum class D3D12ParametersFlags : uint64_t
 {
     eNone = 0x00,
-    eDisableReBAR = 0x01,                    // Disable use of ReBAR (D3D12_HEAP_TYPE_GPU_UPLOAD) for this device
+    eDisableReBAR = 0x01,                    // Disable use of ReBAR (D3D12_HEAP_TYPE_GPU_UPLOAD) for this device, not recommended as it can degrade performance
     eComputeQueueSharedWithFrame = 0x02,     // Provided compute queue is used for main rendering (graphics) as well
+    eEnableComputeAutoTuning = 0x04,        // Enable inference related compute shader auto-tuning for this device, it can improve performance but it can make first few iterations slower due to the tuning process
 };
 
 NVIGI_ENUM_OPERATORS_64(D3D12ParametersFlags)

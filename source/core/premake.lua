@@ -2,19 +2,17 @@ group "core"
 
 project "nvigi.core.framework"
     kind "SharedLib"
-    targetdir (bindir .. "%{cfg.buildcfg}_%{cfg.platform}")
-    implibdir  (libdir .. "%{cfg.buildcfg}_%{cfg.platform}")
-    objdir (artifactsdir .. "%{prj.name}/%{cfg.buildcfg}_%{cfg.platform}")
+    targetdir (bindir .. "%{cfg.platform}/%{cfg.buildcfg}")
+    implibdir  (libdir .. "%{cfg.platform}/%{cfg.buildcfg}")
+    objdir (artifactsdir .. "%{prj.name}/%{cfg.platform}/%{cfg.buildcfg}")
     filter {"system:windows"}
-            symbolspath (symbolsdir .. "%{cfg.buildcfg}_%{cfg.platform}/$(TargetName).pdb")
+            symbolspath (symbolsdir .. "%{cfg.platform}/%{cfg.buildcfg}/$(TargetName).pdb")
     filter {}
 	
 	staticruntime "off"
 	
 	if os.ishost("windows") then
 		prebuildcommands { 'pushd '..path.translate(ROOT .. "_artifacts"), path.translate("../tools/").."gitVersion.bat", 'popd' }
-	else
-		prebuildcommands { '(cd '..path.translate(ROOT .. "_artifacts &&")..path.translate("../tools/").."gitVersion.sh)"}
 	end
 	
 	files { 		
@@ -38,14 +36,15 @@ project "nvigi.core.framework"
 		}
 	filter {}
 
-	filter {"system:linux"}
-		links {"dl", "pthread", "rt"}
 	filter {"system:windows", "configurations:not Production"}
 		defines { "NVIGI_VALIDATE_MEMORY" }
-	filter {"system:windows"}
+	filter {"system:windows", "platforms:x64"}
+		includedirs {ROOT .. "external/nvapi"}
 		links {ROOT .. "external/nvapi/amd64/nvapi64.lib", "dxgi.lib", "Version.lib", "dbghelp.lib"}
 		linkoptions { "/DEF:" .. "\"" .. ROOT .. "source/core/nvigi.framework/exports.def\"" }
-	
+	filter {}
+
+	filter {"system:windows"}
 		vpaths { ["api"] = {"./nvigi.api/**.h"}}
 		vpaths { ["log"] = {"./nvigi.log/**.h","./nvigi.log/**.cpp"}}
 		vpaths { ["memory"] = {"./nvigi.memory/**.h","./nvigi.memory/**.cpp"}}
@@ -56,10 +55,11 @@ project "nvigi.core.framework"
 		vpaths { ["version"] = {"./nvigi.framework/versions.h","./nvigi.framework/resource.h","./nvigi.framework/**.rc"}}
 	filter {}
 		
-	if os.ishost("windows") then
+	filter {"system:windows", "platforms:x64"}
 		postbuildcommands {
 			'{COPYFILE} ../../external/amd-ags/ags_lib/lib/amd_ags_x64.dll %[%{cfg.buildtarget.directory}]'
 		}
-	end
+	filter {}
+		filter {}
 
 group ""

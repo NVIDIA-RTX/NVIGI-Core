@@ -42,8 +42,8 @@ if exist .\_project\vs2022\nvigicoresdk.sln (
 )
 :found_vs
 
-echo off
 set cfgs=Debug
+set platforms=
 set bld=Clean,Build
 
 :loop
@@ -54,26 +54,33 @@ IF NOT "%1"=="" (
     IF "%1"=="-debug" (
         SET cfgs=Debug
     )
+    IF "%1"=="-Debug" (
+        SET cfgs=Debug
+    )
     IF "%1"=="-release" (
+        SET cfgs=Release
+    )
+    IF "%1"=="-Release" (
         SET cfgs=Release
     )
     IF "%1"=="-production" (
         SET cfgs=Production
     )    
-    IF "%1"=="-Debug" (
-        SET cfgs=Debug
-    )
-    IF "%1"=="-Release" (
-        SET cfgs=Release
-    )
     IF "%1"=="-Production" (
         SET cfgs=Production
     )    
     IF "%1"=="-all" (
         SET cfgs=Debug Release Production
     )    
+    IF "%1"=="-x64" (
+        SET platforms=%platforms% x64
+    )
     SHIFT
     GOTO :loop
+)
+
+IF "%platforms%"=="" (
+    SET platforms=x64
 )
 
 if not exist "%VS_PATH%" (
@@ -91,13 +98,15 @@ exit /b 1
 :SetVSEnvFinished
 
 setlocal enabledelayedexpansion
-for %%c in (%cfgs%) do (
-    echo %%c
-    if exist .\_project\vs2022\nvigicoresdk.sln (
-        msbuild .\_project\vs2022\nvigicoresdk.sln /m /t:%bld% /property:Configuration=%%c
-    ) else if exist .\_project\vs2019\nvigicoresdk.sln (
-        msbuild .\_project\vs2019\nvigicoresdk.sln /m /t:%bld% /property:Configuration=%%c
-    ) else (
-        msbuild .\_project\vs2017\nvigicoresdk.sln /m /t:%bld% /property:Configuration=%%c
+for %%p in (%platforms%) do (
+    for %%c in (%cfgs%) do (
+        echo %%c %%p
+        if exist .\_project\vs2022\nvigicoresdk.sln (
+            msbuild .\_project\vs2022\nvigicoresdk.sln /m /t:%bld% /property:Configuration=%%c /property:Platform=%%p
+        ) else if exist .\_project\vs2019\nvigicoresdk.sln (
+            msbuild .\_project\vs2019\nvigicoresdk.sln /m /t:%bld% /property:Configuration=%%c /property:Platform=%%p
+        ) else (
+            msbuild .\_project\vs2017\nvigicoresdk.sln /m /t:%bld% /property:Configuration=%%c /property:Platform=%%p
+        )
     )
 )

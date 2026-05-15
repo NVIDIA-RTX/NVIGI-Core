@@ -6,19 +6,38 @@
 #include <cupti.h>
 #include <unordered_set>
 #include <unordered_map>
+#include <array>
+#include <mutex>
+#include <atomic>
+#include <vector>
+#include <cstdio>
+#include <cstring>
+#include <cstdlib>
+
+#if WITHOUT_IGI
+#include <windows.h>
+#include <objbase.h>
+#include <d3d12.h>
+#include <dxgi1_4.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
+// Dropped next to this header by extras/llamacpp_CIG_patch/setup.bat (same folder as llama.cpp/..)
+#include "cig_scheduler_settings.h"
+#else
 #ifdef NVIGI_WINDOWS
 #include <cig_scheduler_settings.h>
 #endif
-
 #include "nvigi_cuda.h"
 #include "nvigi_hwi_cuda.h"
 #include <vulkan/vulkan.h>
+#endif
 
 #define ENABLE_VERBOSE_CIG_LOGGING 0
+#define CRASH_ON_ASYNC_FAILURE 0
 
 namespace CIGCompatibilityChecker
 {
-#ifdef NVIGI_WINDOWS
+#if defined(NVIGI_WINDOWS) || WITHOUT_IGI
     // We're using the NVIDIA CUPTI library to logs CUDA kernel launch events 
     // to a buffer (called an activity buffer). Every time the buffer gets full
     // (or is flushed) it calls CIGCompatibilityChecker::bufferCompletedCallback().
@@ -73,11 +92,21 @@ namespace CIGCompatibilityChecker
         }
     };
     CheckerState gCheckerState;
+#if !WITHOUT_IGI
     nvigi::CudaParameters gCudaParameters{};
+#endif
     CUcontext gCtxBeforeTest{};
     CUpti_SubscriberHandle gCuptiSubscriber{};
+#if WITHOUT_IGI
+    struct CigD3d12Parameters {
+        ID3D12Device* device{};
+        ID3D12CommandQueue* queue{};
+    };
+    CigD3d12Parameters gD3dParameters{};
+#else
     nvigi::D3D12Parameters gD3dParameters{};
     nvigi::VulkanParameters gVulkanParameters{};
+#endif
     CigSchedulerSettingsAPI sched{};
 
 #define checkCuErrors(err)  __checkCuErrors (err, __FILE__, __LINE__)
@@ -132,6 +161,7 @@ namespace CIGCompatibilityChecker
         }
     }
 
+#if !WITHOUT_IGI
 #define checkAimErrors(err)  __checkAimErrors (err, __FILE__, __LINE__)
     inline void __checkAimErrors(nvigi::Result err, const char* file, const int line)
     {
@@ -155,8 +185,13 @@ namespace CIGCompatibilityChecker
             exit(EXIT_FAILURE);
         }
     }
+#endif
 
+#if WITHOUT_IGI
+    void initCIG()
+#else
     nvigi::D3D12Parameters initCIG(PFun_nvigiLoadInterface* nvigiLoadInterface)
+#endif
     {
         if (!gD3dParameters.queue)
         {
@@ -169,15 +204,19 @@ namespace CIGCompatibilityChecker
             HRESULT err = CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory));
             checkDxErrors(err);
 
+            int deviceIndex = -1;
             while (dxgiFactory->EnumAdapters(i++, (IDXGIAdapter**)&dxgiAdapter) !=
                 DXGI_ERROR_NOT_FOUND)
             {
                 DXGI_ADAPTER_DESC adapterDesc;
                 dxgiAdapter->GetDesc(&adapterDesc);
                 adapterList.push_back(dxgiAdapter);
+                if (adapterDesc.VendorId == 0x10DE && deviceIndex < 0) // NVDA
+                    deviceIndex = i - 1;
             }
 
-            int deviceIndex = 0;
+            if (deviceIndex < 0)
+                deviceIndex = 0;
             IDXGIAdapter1* dxAdapter = adapterList[deviceIndex];
 
             // Device
@@ -195,9 +234,12 @@ namespace CIGCompatibilityChecker
                 &queueDesc, IID_PPV_ARGS(&gD3dParameters.queue));
             checkDxErrors(err);
         }
+#if !WITHOUT_IGI
         return gD3dParameters;
+#endif
     }
 
+#if !WITHOUT_IGI
     nvigi::VulkanParameters initVulkanCIG(PFun_nvigiLoadInterface* nvigiLoadInterface)
     {
         if (!gVulkanParameters.queue)
@@ -375,6 +417,112 @@ namespace CIGCompatibilityChecker
         }
         return gVulkanParameters;
     }
+#endif
+
+#if WITHOUT_IGI
+    static inline CUresult cigCreateSharedCudaContextD3d12(ID3D12Device* device, ID3D12CommandQueue* queue, CUcontext* outCtx)
+    {
+        *outCtx = nullptr;
+        IID riid;
+        if (FAILED(IIDFromString(L"{ADEC44E2-61F0-45C3-AD9F-1B37379284FF}", &riid)))
+        {
+            return CUDA_ERROR_UNKNOWN;
+        }
+
+        ID3D12Device* nativeD3D12Device = nullptr;
+        device->QueryInterface(riid, reinterpret_cast<void**>(&nativeD3D12Device));
+        if (nativeD3D12Device)
+        {
+            device = nativeD3D12Device;
+            nativeD3D12Device->Release();
+        }
+        ID3D12CommandQueue* nativeD3D12Queue = nullptr;
+        queue->QueryInterface(riid, reinterpret_cast<void**>(&nativeD3D12Queue));
+        if (nativeD3D12Queue)
+        {
+            queue = nativeD3D12Queue;
+            nativeD3D12Queue->Release();
+        }
+
+        HMODULE cudaModule = LoadLibraryExA("nvcuda.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!cudaModule)
+        {
+            return CUDA_ERROR_SHARED_OBJECT_SYMBOL_NOT_FOUND;
+        }
+
+        using PFun_cuCtxCreate_v4 = CUresult(CUcontext* pctx, CUctxCreateParams* ctxCreateParams, unsigned int flags, CUdevice dev);
+        PFun_cuCtxCreate_v4* ptr_cuCtxCreate_v4 = (PFun_cuCtxCreate_v4*)GetProcAddress(cudaModule, "cuCtxCreate_v4");
+        if (!ptr_cuCtxCreate_v4)
+        {
+            return CUDA_ERROR_NOT_SUPPORTED;
+        }
+
+        CUctxCigParam ctxCigParam{};
+        ctxCigParam.sharedDataType = CIG_DATA_TYPE_D3D12_COMMAND_QUEUE;
+        ctxCigParam.sharedData = queue;
+
+        CUctxCreateParams ctxCreateParams{};
+        ctxCreateParams.execAffinityParams = nullptr;
+        ctxCreateParams.numExecAffinityParams = 0;
+        ctxCreateParams.cigParams = &ctxCigParam;
+
+        LUID dx12deviceluid = device->GetAdapterLuid();
+
+        int devIndex = 0;
+        int numCudaDevices = 0;
+        cudaError_t cudaErr = cudaGetDeviceCount(&numCudaDevices);
+        if (cudaErr != cudaSuccess)
+        {
+            return CUDA_ERROR_NO_DEVICE;
+        }
+        bool found = false;
+        for (int32_t devId = 0; devId < numCudaDevices; devId++)
+        {
+            cudaDeviceProp devProp{};
+            cudaErr = cudaGetDeviceProperties(&devProp, devId);
+            if (cudaErr != cudaSuccess)
+            {
+                continue;
+            }
+            if ((memcmp(&dx12deviceluid.LowPart, devProp.luid, sizeof(dx12deviceluid.LowPart)) == 0) &&
+                (memcmp(&dx12deviceluid.HighPart, devProp.luid + sizeof(dx12deviceluid.LowPart), sizeof(dx12deviceluid.HighPart)) == 0))
+            {
+                devIndex = devId;
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+        {
+            return CUDA_ERROR_NO_DEVICE;
+        }
+
+        CUcontext existingCtx{};
+        CUresult err = cuCtxGetCurrent(&existingCtx);
+        if (err != CUDA_SUCCESS)
+        {
+            return err;
+        }
+
+        CUdevice dev{};
+        err = cuDeviceGet(&dev, devIndex);
+        if (err != CUDA_SUCCESS)
+        {
+            return err;
+        }
+
+        CUcontext newCtx{};
+        err = (*ptr_cuCtxCreate_v4)(&newCtx, &ctxCreateParams, 0, dev);
+        if (err != CUDA_SUCCESS)
+        {
+            (void)cuCtxSetCurrent(existingCtx);
+            return err;
+        }
+
+        *outCtx = newCtx;
+        return CUDA_SUCCESS;
+    }
+#endif
 
     // Common pre-initialization setup
     void initPre()
@@ -416,7 +564,15 @@ namespace CIGCompatibilityChecker
         }
         else
         {
+#if WITHOUT_IGI
+            static std::atomic<bool> s_cuptiSkipMsg(false);
+            if (!s_cuptiSkipMsg.exchange(true))
+            {
+                printf("Skipping CUPTI due to errors, most likely running on new HW\n");
+            }
+#else
             NVIGI_LOG_WARN_ONCE("Skipping CUPTI due to errors, most likely running on new HW")
+#endif
         }
 #endif
     }
@@ -454,14 +610,51 @@ namespace CIGCompatibilityChecker
             checkCuErrors(cuerr);
             gCheckerState.maxSharedMemBytesForCig = (uint32_t)availableSharedMemory - reservedSharedMemory;
 
+#if WITHOUT_IGI
+            static std::atomic<bool> s_cigInfoOnce(false);
+            if (!s_cigInfoOnce.exchange(true))
+            {
+                printf("CIG Info: max shared memory bytes for CIG = %u (CTX is %s)\n", gCheckerState.maxSharedMemBytesForCig,
+                    cig ? "SUPPORTED" : "NOT SUPPORTED");
+            }
+#else
             NVIGI_LOG_INFO_ONCE("CIG Info: max shared memory bytes for CIG = %d (CTX is %s)\n", gCheckerState.maxSharedMemBytesForCig,
                 cig ? "SUPPORTED" : "NOT SUPPORTED");
+#endif
 
+#if !WITHOUT_IGI
             cuerr = cuCtxSetCurrent(gCtxBeforeTest);
             checkCuErrors(cuerr);
+#endif
         }
     }
 
+#if WITHOUT_IGI
+    void init(bool useCIG = true)
+    {
+        initPre();
+
+        CUcontext cigContext{};
+        if (useCIG)
+        {
+            initCIG();
+            CUresult r = cigCreateSharedCudaContextD3d12(gD3dParameters.device, gD3dParameters.queue, &cigContext);
+            if (r != CUDA_SUCCESS)
+            {
+                printf("CIG: probe context creation failed (%d); continuing without CIG limit probe.\n", (int)r);
+                cigContext = {};
+            }
+        }
+        else
+        {
+            cigContext = gCtxBeforeTest;
+        }
+
+        initPost(cigContext);
+    }
+#endif
+
+#if !WITHOUT_IGI
     // Call at start of test - initializes D3D
     nvigi::D3D12Parameters init(PFun_nvigiLoadInterface* nvigiLoadInterface, PFun_nvigiUnloadInterface* nvigiUnloadInterface, bool useCIG = true)
     {
@@ -523,9 +716,10 @@ namespace CIGCompatibilityChecker
         initPost(cigContext);
         return cigParameters;
     }
+#endif
 
     // Call at end of test
-    bool check(bool useCIG = true, int ordinalOfRequestedCudaDevice=-1)
+    bool check(bool useCIG = true, int ordinalOfRequestedCudaDevice = -1)
     {
 #ifdef NVIGI_DISABLE_CUPTI
         return true;
@@ -581,15 +775,15 @@ namespace CIGCompatibilityChecker
             CUcontext savedContext;
             CUresult err = cuCtxGetCurrent(&savedContext);
             checkCuErrors(err);
-            
+
             // Switch to the context we want to query
             err = cuCtxSetCurrent(context);
             checkCuErrors(err);
-            
+
             CUdevice device;
             err = cuCtxGetDevice(&device);
             checkCuErrors(err);
-            
+
             auto iter = deviceToOrdinal.find(device);
             if (iter != deviceToOrdinal.end())
             {
@@ -598,13 +792,13 @@ namespace CIGCompatibilityChecker
 
             err = cuDeviceGetName(info.name, sizeof(info.name), device);
             checkCuErrors(err);
-            
+
             // Restore the original context
             err = cuCtxSetCurrent(savedContext);
             checkCuErrors(err);
 
             return info;
-        };
+            };
 
         bool runningOnRequestedDevice = true;
 
@@ -897,6 +1091,7 @@ namespace CIGCompatibilityChecker
                     if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel || // 307
                         callbackId == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernel_ptsz || // 442
                         callbackId == CUPTI_DRIVER_TRACE_CBID_cuGraphLaunch || // 514
+                        callbackId == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernelEx || // 652
                         callbackId == CUPTI_DRIVER_TRACE_CBID_cuGraphLaunch_ptsz) // 653
                     {
                         CUstream stream{};
@@ -912,6 +1107,18 @@ namespace CIGCompatibilityChecker
                             {
                                 cuLaunchKernel_ptsz_params* params = (cuLaunchKernel_ptsz_params*)pCallbackData->functionParams;
                                 stream = params->hStream;
+                            }
+                            else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernelEx) // 652
+                            {
+                                cuLaunchKernelEx_params* params = (cuLaunchKernelEx_params*)pCallbackData->functionParams;
+                                const CUlaunchConfig* config = params->config;
+                                stream = config->hStream;
+                            }
+                            else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuLaunchKernelEx_ptsz) // 653
+                            {
+                                cuLaunchKernelEx_ptsz_params* params = (cuLaunchKernelEx_ptsz_params*)pCallbackData->functionParams;
+                                const CUlaunchConfig* config = params->config;
+                                stream = config->hStream;
                             }
                             else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuGraphLaunch) // 514
                             {
@@ -1023,18 +1230,28 @@ namespace CIGCompatibilityChecker
                 }
                 else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuMemAllocAsync) // 682
                 {
-#if ENABLE_VERBOSE_CIG_LOGGING
+                    // cuMemAllocAsync is not supported by CIG. If we let it run then it will crash the driver at an unrelated sync point
+                    // So instead we __debugbreak() now to give the user a callstack to the actual call that causes the crash
                     cuMemAllocAsync_params* params = (cuMemAllocAsync_params*)pCallbackData->functionParams;
                     printf("CIG Info: cuMemAllocAsync: size=%zu, stream=%p, returned dptr=%zu, context=%p\n",
                         params->bytesize, params->hStream, *params->dptr, pCallbackData->context);
+#if CRASH_ON_ASYNC_FAILURE
+                    printf("CIG Error: cuMemAllocAsync will cause CIG to crash later, exiting now to get more useful callstack\n");
+                    __debugbreak();
+                    exit(EXIT_FAILURE);
 #endif
                 }
                 else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuMemAllocAsync_ptsz) // 683
                 {
-#if ENABLE_VERBOSE_CIG_LOGGING
+                    // cuMemAllocAsync_ptsz is not supported by CIG. If we let it run then it will crash the driver at an unrelated sync point
+                    // So instead we __debugbreak() now to give the user a callstack to the actual call that causes the crash
                     cuMemAllocAsync_ptsz_params* params = (cuMemAllocAsync_ptsz_params*)pCallbackData->functionParams;
                     printf("CIG Info: cuMemAllocAsync_ptsz: size=%zu, stream=%p, returned dptr=%zu, context=%p\n",
                         params->bytesize, params->hStream, *params->dptr, pCallbackData->context);
+#if CRASH_ON_ASYNC_FAILURE
+                    printf("CIG Error: cuMemAllocAsync_ptsz will cause CIG to crash later, exiting now to get more useful callstack\n");
+                    __debugbreak();
+                    exit(EXIT_FAILURE);
 #endif
                 }
                 else if (callbackId == CUPTI_DRIVER_TRACE_CBID_cuMemFree_v2) // 221
@@ -1129,4 +1346,4 @@ namespace CIGCompatibilityChecker
     // Call at end of test
     bool check(bool = true) { return true; }
 #endif
-};
+}

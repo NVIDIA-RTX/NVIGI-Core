@@ -1,9 +1,9 @@
 function pluginBasicSetupInternal(name, sdk)
-	targetdir (bindir .. "%{cfg.buildcfg}_%{cfg.platform}")
-	implibdir  (artifactsdir .. "%{prj.name}/%{cfg.buildcfg}_%{cfg.platform}")
-	objdir (artifactsdir .. "%{prj.name}/%{cfg.buildcfg}_%{cfg.platform}") 
+	targetdir (bindir .. "%{cfg.platform}/%{cfg.buildcfg}")
+	implibdir  (artifactsdir .. "%{prj.name}/%{cfg.platform}/%{cfg.buildcfg}")
+	objdir (artifactsdir .. "%{prj.name}/%{cfg.platform}/%{cfg.buildcfg}")
 	filter {"system:windows"}
-		symbolspath (symbolsdir .. "%{cfg.buildcfg}_%{cfg.platform}/$(TargetName).pdb")
+		symbolspath (symbolsdir .. "%{cfg.platform}/%{cfg.buildcfg}/$(TargetName).pdb")
 	filter {}
 
 	files { 

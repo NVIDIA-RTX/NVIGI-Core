@@ -9,10 +9,6 @@
 #include <vector>
 #include "source/core/nvigi.extra/extra.h"
 
-#ifdef NVIGI_LINUX
-NVIGI_IGNOREWARNING_WITH_PUSH("-Wcast-qual")
-#endif
-
 namespace nvigi::ai
 {
 //! INFERENCE DATA SLOT HELPERS
@@ -328,7 +324,3 @@ struct InferenceDataAudioHelper
 };
 
 }
-
-#ifdef NVIGI_LINUX
-NVIGI_IGNOREWARNING_POP
-#endif

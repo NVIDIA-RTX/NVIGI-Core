@@ -21,6 +21,7 @@
 #include <iomanip>
 
 #include "source/core/nvigi.api/nvigi_version.h"
+#include "source/core/nvigi.api/nvigi_types.h"
 #include "external/json/source/nlohmann/json.hpp"
 using json = nlohmann::json;
 
@@ -92,6 +93,45 @@ inline std::string toStr(const Version& v)
 inline std::wstring toWStr(const Version& v)
 {
     return std::to_wstring(v.major) + L"." + std::to_wstring(v.minor) + L"." + std::to_wstring(v.build);
+}
+
+inline std::string toStr(SystemFlags flag)
+{
+    switch (flag)
+    {
+    case SystemFlags::eHWSchedulingEnabled: return "HWSchedulingEnabled";
+    case SystemFlags::eSSE: return "SSE";
+    case SystemFlags::eSSE2: return "SSE2";
+    case SystemFlags::eSSE3: return "SSE3";
+    case SystemFlags::eSSSE3: return "SSSE3";
+    case SystemFlags::eSSE4a: return "SSE4a";
+    case SystemFlags::eSSE41: return "SSE41";
+    case SystemFlags::eSSE42: return "SSE42";
+    case SystemFlags::eAVX: return "AVX";
+    case SystemFlags::eAVX2: return "AVX2";
+    case SystemFlags::eMMX: return "MMX";
+    }
+    assert(false && "please update this method to cover for unknown enum flags.");
+    return "Unknown";
+}
+inline std::wstring toWStr(SystemFlags flag)
+{
+    switch (flag)
+    {
+    case SystemFlags::eHWSchedulingEnabled: return L"HWSchedulingEnabled";
+    case SystemFlags::eSSE: return L"SSE";
+    case SystemFlags::eSSE2: return L"SSE2";
+    case SystemFlags::eSSE3: return L"SSE3";
+    case SystemFlags::eSSSE3: return L"SSSE3";
+    case SystemFlags::eSSE4a: return L"SSE4a";
+    case SystemFlags::eSSE41: return L"SSE41";
+    case SystemFlags::eSSE42: return L"SSE42";
+    case SystemFlags::eAVX: return L"AVX";
+    case SystemFlags::eAVX2: return L"AVX2";
+    case SystemFlags::eMMX: return L"MMX";
+    }
+    assert(false && "please update this method to cover for unknown enum flags.");
+    return L"Unknown";
 }
 
 inline std::string guidToString(const UID& guid) {

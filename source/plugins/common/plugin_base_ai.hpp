@@ -443,7 +443,6 @@ public:
         PluginID feature{};
 
         ai::CommonCapsData capsData;
-        json modelInfo;
 
 #ifdef GGML_USE_CUBLAS
         nvigi::IHWICuda* icig{};
@@ -681,7 +680,14 @@ private:
             while (instance->running.load() && !instance->cancelled.load() && res == kResultOk) {
                 auto result = PluginImpl::onEvaluate(ctx);
                 if (!result) {
-                    NVIGI_LOG_ERROR("Evaluation failed: %s", result.error().message.c_str());
+                    // Only report an error if user did not cancel, to avoid confusion with expected cancellation flow, result should have the code we can check for cancellation vs actual errors
+                    if(result.error().code != kResultCanceled) {
+                        NVIGI_LOG_ERROR("Evaluation failed: %s", result.error().message.c_str());
+                    }
+                    else
+                    {
+                        NVIGI_LOG_INFO("Evaluation cancelled successfully");
+                    }
                     res = result.error().code;
                     break;
                 }

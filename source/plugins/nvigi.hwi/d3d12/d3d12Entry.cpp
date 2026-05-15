@@ -17,7 +17,7 @@
 #include "nvigi_hwi_d3d12.h"
 
 #include "dxgi.h"
-#include "external/nvapi/nvapi.h"
+#include "nvapi.h"
 
 #include <unordered_set>
 

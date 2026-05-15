@@ -5,8 +5,13 @@
     {
         "ext" : "my_ext1",
         "notes": "Must use my_ext1 format, which doesn't exist and is merely an example",
-      "file": {
-        "command": "curl -L -o template-model.my_ext1 'localhost/template-model.my_ext1'"
+        "file": {
+          "command": "curl -L -o template-model.my_ext1 'localhost/template-model.my_ext1'"
+        },
+        "local_files": [
+          "my_model.my_ext1",
+          "my_model.my_ext2"
+        ]
       }
     }
 }

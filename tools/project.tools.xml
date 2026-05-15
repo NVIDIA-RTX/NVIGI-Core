@@ -1,7 +1,7 @@
 ﻿<project toolsVersion="6.21">
     <dependency name="premake" linkPath="premake5">
         <!-- public-->
-        <package name="premake" version="5.0.0-beta2+nv1-windows-x86_64" platforms="windows-x86_64"/>
+        <package name="premake5" version="ab692ab_x64-windows" platforms="windows-x86_64"/>
         <package name="premake" version="5.0.0-beta2+nv1-linux-x86_64" platforms="linux-x86_64" />
 	</dependency>
        <dependency name="python" linkPath="python">

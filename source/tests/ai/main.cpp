@@ -7,8 +7,6 @@
 #include <dxgi1_6.h>
 #include <wrl.h>
 #include <conio.h>
-#else
-#include <linux/limits.h>
 #endif
 
 #include <cstdio>
@@ -42,8 +40,7 @@ namespace fs = std::filesystem;
 #define CATCH_CONFIG_RUNNER
 #include "external/catch2/single_include/catch2/catch.hpp"
 
-#if NVIGI_LINUX
-#else
+#ifdef NVIGI_WINDOWS
 #include "source/tests/ai/d3d12.h"
 #include "source/utils/nvigi.wav/wav.h"
 #include "source/utils/nvigi.dsound/recorder.h"
@@ -106,31 +103,22 @@ struct test_params {
     nvigi::system::ISystem* isystem{};
     nvigi::memory::IMemoryManager* imem{};
     nvigi::IHWICuda* icig{};
-
-#ifdef NVIGI_WINDOWS
+    bool hasNvidiaAdapter = false;
     bool useCiG = true;
-#else
-    bool useCiG = false;
-#endif
 };
 
 test_params params{};
 
 inline std::string getExecutablePath()
 {
-#ifdef NVIGI_LINUX
-    char exePath[PATH_MAX] = {};
-    ssize_t size = readlink("/proc/self/exe", exePath, sizeof(exePath));
-    (void)size;
-    std::string searchPathW = exePath;
-    searchPathW.erase(searchPathW.rfind('/'));
-    return searchPathW + "/";
-#else
+#ifdef NVIGI_WINDOWS
     CHAR pathAbsW[MAX_PATH] = {};
     GetModuleFileNameA(GetModuleHandleA(NULL), pathAbsW, ARRAYSIZE(pathAbsW));
     std::string searchPathW = pathAbsW;
     searchPathW.erase(searchPathW.rfind('\\'));
     return searchPathW + "\\";
+#else
+    return std::string();
 #endif
 }
 
@@ -140,6 +128,21 @@ void loggingCallback(nvigi::LogType /*type*/ , const char* msg)
     OutputDebugStringA(msg);
 #endif
     std::cout << msg;
+}
+
+bool hasDetectedNvidiaAdapter(const nvigi::PluginAndSystemInformation* info)
+{
+    if (info == nullptr || info->detectedAdapters == nullptr)
+        return false;
+
+    for (size_t index = 0; index < info->numDetectedAdapters; ++index)
+    {
+        const auto* adapter = info->detectedAdapters[index];
+        if (adapter != nullptr && adapter->vendor == nvigi::VendorId::eNVDA)
+            return true;
+    }
+
+    return false;
 }
 
 bool moveFiles(const std::wstring& source_dir, const std::vector<std::wstring>& file_patterns, const fs::path& dst_dir)
@@ -292,23 +295,28 @@ TEST_CASE("init_split", "[core]")
     REQUIRE(info->numDetectedAdapters >= 1);
     REQUIRE(info->numDetectedPlugins >= 1);
 
+    const bool hasNvidiaAdapter = nvigi::hasDetectedNvidiaAdapter(info);
+
     // Make sure additional path to plugins works as expected
-    auto prevNumPlugins = info->numDetectedPlugins;
-    nvigi::IHWICuda* icig0{};
-    // Load the plugin from the additional path
-    nvigiGetInterfaceDynamic(nvigi::plugin::hwi::cuda::kId, &icig0, nvigi::params.nvigiLoadInterface, nvigi::extra::utf16ToUtf8(hwiPath.c_str()).c_str());
-    REQUIRE(icig0 != nullptr);
-    nvigi::IHWICuda* icig1{};
-    // Load the same plugin, make sure it is not duplicated
-    nvigiGetInterfaceDynamic(nvigi::plugin::hwi::cuda::kId, &icig1, nvigi::params.nvigiLoadInterface, nvigi::extra::utf16ToUtf8(hwiPath.c_str()).c_str());
-    REQUIRE(icig1 != nullptr);
-    // hwi.cuda depends on hwi.common, so we should have 2 plugins loaded
-    auto newNumPlugins = info->numDetectedPlugins;
-    REQUIRE(newNumPlugins == (prevNumPlugins + 2));
-    result = nvigi::params.nvigiUnloadInterface(nvigi::plugin::hwi::cuda::kId, icig0);
-    REQUIRE(result == nvigi::kResultOk);
-    result = nvigi::params.nvigiUnloadInterface(nvigi::plugin::hwi::cuda::kId, icig1);
-    REQUIRE(result == nvigi::kResultOk);
+    if (hasNvidiaAdapter)
+    {
+        auto prevNumPlugins = info->numDetectedPlugins;
+        nvigi::IHWICuda* icig0{};
+        // Load the plugin from the additional path
+        nvigiGetInterfaceDynamic(nvigi::plugin::hwi::cuda::kId, &icig0, nvigi::params.nvigiLoadInterface, nvigi::extra::utf16ToUtf8(hwiPath.c_str()).c_str());
+        REQUIRE(icig0 != nullptr);
+        nvigi::IHWICuda* icig1{};
+        // Load the same plugin, make sure it is not duplicated
+        nvigiGetInterfaceDynamic(nvigi::plugin::hwi::cuda::kId, &icig1, nvigi::params.nvigiLoadInterface, nvigi::extra::utf16ToUtf8(hwiPath.c_str()).c_str());
+        REQUIRE(icig1 != nullptr);
+        // hwi.cuda depends on hwi.common, so we should have 2 plugins loaded
+        auto newNumPlugins = info->numDetectedPlugins;
+        REQUIRE(newNumPlugins == (prevNumPlugins + 2));
+        result = nvigi::params.nvigiUnloadInterface(nvigi::plugin::hwi::cuda::kId, icig0);
+        REQUIRE(result == nvigi::kResultOk);
+        result = nvigi::params.nvigiUnloadInterface(nvigi::plugin::hwi::cuda::kId, icig1);
+        REQUIRE(result == nvigi::kResultOk);
+    }
 
     result = nvigi::params.nvigiShutdown();
     REQUIRE(result == nvigi::kResultOk);
@@ -323,11 +331,7 @@ TEST_CASE("init", "[core]")
     auto exePath = nvigi::getExecutablePath();
     auto corePathUtf8 = nvigi::params.sdkPath.empty() ? exePath : nvigi::params.sdkPath;
 
-#ifdef NVIGI_WINDOWS
     auto libPath = corePathUtf8 + "/nvigi.core.framework.dll";
-#else
-    auto libPath = corePathUtf8 + "/nvigi.core.framework.so";
-#endif
     auto finalPath = nvigi::file::normalizePath(nvigi::extra::utf8ToUtf16(libPath.c_str()));
     HMODULE lib = LoadLibraryW(finalPath.wstring().c_str());
     REQUIRE(lib != nullptr);
@@ -363,23 +367,27 @@ TEST_CASE("init", "[core]")
     REQUIRE(result == nvigi::kResultOk);
     REQUIRE(info->numDetectedAdapters >= 1);
     REQUIRE(info->numDetectedPlugins >= 1);
+    nvigi::params.hasNvidiaAdapter = nvigi::hasDetectedNvidiaAdapter(info);
 
 
 #ifdef NVIGI_WINDOWS
     //! Test "getters" but only on Windows since there is no hwi::cuda on Linux
-    nvigi::Version version;
-    nvigi::VendorId vendor;
-    uint32_t arch;
-    REQUIRE(nvigi::getPluginStatus(info, nvigi::plugin::hwi::cuda::kId) == nvigi::kResultOk);
-    REQUIRE(nvigi::getPluginRequiredOSVersion(info, nvigi::plugin::hwi::cuda::kId,version) == nvigi::kResultOk);
-    REQUIRE(version == nvigi::Version(10, 0, 19041)); // HW scheduling introduced - Windows 10, Version 2004 (20H1), which corresponds to build 19041 (Windows 10 May 2020 Update).
-    REQUIRE(nvigi::getPluginRequiredAdapterDriverVersion(info, nvigi::plugin::hwi::cuda::kId, version) == nvigi::kResultOk);
-    REQUIRE(version == nvigi::Version(555, 85, 0)); // CiG min spec
-    REQUIRE(nvigi::getPluginRequiredAdapterVendor(info, nvigi::plugin::hwi::cuda::kId, vendor) == nvigi::kResultOk);
-    REQUIRE(vendor == nvigi::VendorId::eNVDA);
-    REQUIRE(nvigi::getPluginRequiredAdapterArchitecture(info, nvigi::plugin::hwi::cuda::kId, arch) == nvigi::kResultOk);
-    REQUIRE(arch == 0x140);
-    REQUIRE(nvigi::isPluginExportingInterface(info, nvigi::plugin::hwi::cuda::kId, nvigi::IHWICuda::s_type) == nvigi::kResultOk);
+    if (nvigi::params.hasNvidiaAdapter)
+    {
+        nvigi::Version version;
+        nvigi::VendorId vendor;
+        uint32_t arch;
+        REQUIRE(nvigi::getPluginStatus(info, nvigi::plugin::hwi::cuda::kId) == nvigi::kResultOk);
+        REQUIRE(nvigi::getPluginRequiredOSVersion(info, nvigi::plugin::hwi::cuda::kId,version) == nvigi::kResultOk);
+        REQUIRE(version == nvigi::Version(10, 0, 19041)); // HW scheduling introduced - Windows 10, Version 2004 (20H1), which corresponds to build 19041 (Windows 10 May 2020 Update).
+        REQUIRE(nvigi::getPluginRequiredAdapterDriverVersion(info, nvigi::plugin::hwi::cuda::kId, version) == nvigi::kResultOk);
+        REQUIRE(version == nvigi::Version(555, 85, 0)); // CiG min spec
+        REQUIRE(nvigi::getPluginRequiredAdapterVendor(info, nvigi::plugin::hwi::cuda::kId, vendor) == nvigi::kResultOk);
+        REQUIRE(vendor == nvigi::VendorId::eNVDA);
+        REQUIRE(nvigi::getPluginRequiredAdapterArchitecture(info, nvigi::plugin::hwi::cuda::kId, arch) == nvigi::kResultOk);
+        REQUIRE(arch == 0x140);
+        REQUIRE(nvigi::isPluginExportingInterface(info, nvigi::plugin::hwi::cuda::kId, nvigi::IHWICuda::s_type) == nvigi::kResultOk);
+    }
 #endif
 
     //! IMPORTANT: Unit test is using INTERNAL interfaces for convenience and validation
@@ -392,6 +400,12 @@ TEST_CASE("init", "[core]")
     nvigi::params.imem = nvigi::memory::imemory;
     nvigiGetInterfaceDynamic(nvigi::core::framework::kId, &nvigi::log::ilog, nvigi::params.nvigiLoadInterface);
     REQUIRE(nvigi::log::ilog != nullptr);
+
+    if (nvigi::params.useCiG && !nvigi::params.hasNvidiaAdapter)
+    {
+        NVIGI_LOG_TEST_WARN("No NVIDIA adapter detected, CUDA/CiG tests will be skipped");
+        nvigi::params.useCiG = false;
+    }
 
     if (nvigi::params.useCiG)
     {
@@ -429,6 +443,12 @@ TEST_CASE("init", "[core]")
 //! TODO: ALL NEW PLUGIN TESTS GO HERE
 //! 
 #include "source/utils/nvigi.ai/tests.h"
+
+//! NETWORK PLUGIN TESTS
+//!
+#include "source/plugins/nvigi.net/tests.h"
+
+
 
 // DO not add tests after this block without consulting the dev team; active experiments with the CUDA-related tests
 
@@ -503,19 +523,14 @@ CATCH_REGISTER_LISTENER(TestRunListener);
 
 //#define NVIGI_TEST_DEBUG_GRPC
 
-#ifdef NVIGI_LINUX
-int main(int argc, char* argv[])
-#else
+#ifdef NVIGI_WINDOWS
 //! Allow utf-8 paths on the command line
 int wmain(int argc, wchar_t** argv)
 #endif
 {
     FILE * f{}; 
-#ifdef NVIGI_WINDOWS    
+#ifdef NVIGI_WINDOWS
     freopen_s(&f, "NUL", "w", stderr);
-#else
-    f = freopen("/dev/nul", "w", stderr);
-    (void)f;
 #endif
 
 #ifdef NVIGI_WINDOWS
@@ -526,27 +541,7 @@ int wmain(int argc, wchar_t** argv)
     // Convert wide arguments to UTF-8
     std::vector<std::string> utf8_args;
     utf8_args.reserve(argc);
-#ifdef NVIGI_LINUX
-    // Vector to store the wide character arguments
-    std::vector<wchar_t*> wargv(argc);
-
-    // Convert each argument from multibyte to wide character
-    for (int i = 0; i < argc; ++i) {
-        // Allocate memory for the wide character argument
-        size_t len = mbstowcs(nullptr, argv[i], 0) + 1;
-        wargv[i] = new wchar_t[len];
-
-        // Perform the conversion
-        mbstowcs(wargv[i], argv[i], len);
-    }
-    for (int i = 0; i < argc; ++i) {
-        utf8_args.push_back(nvigi::extra::utf16ToUtf8(wargv[i]));
-    }
-     // Clean up allocated memory
-    for (int i = 0; i < argc; ++i) {
-        delete[] wargv[i];
-    }
-#else
+#ifdef NVIGI_WINDOWS
     for (int i = 0; i < argc; ++i) {
         utf8_args.push_back(nvigi::extra::utf16ToUtf8(argv[i]));
     }
@@ -588,7 +583,8 @@ int wmain(int argc, wchar_t** argv)
     if (nvigi::params.modelDir.empty())
     {
         auto exePath = nvigi::getExecutablePath();
-        nvigi::params.modelDir = exePath + "..\\..\\data\\nvigi.models";
+        // Executable in $root/bin/x64/$config, models are in $root/data/nvigi.models
+        nvigi::params.modelDir = exePath + "..\\..\\..\\data\\nvigi.models";
     }
 
     // Run the tests

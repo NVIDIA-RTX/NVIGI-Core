@@ -26,9 +26,6 @@
 #include <KnownFolders.h>
 #include <ShlObj.h>
 EXTERN_C IMAGE_DOS_HEADER __ImageBase; // MS linker feature
-#else
-#include <linux/limits.h>
-#include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -56,19 +53,14 @@ inline void write(const wchar_t* fname, const std::vector<uint8_t>& data)
     fs::path p(fname);
 #ifdef NVIGI_WINDOWS
     std::fstream file(fname, std::ios::binary | std::ios::out);
-#else
-    std::fstream file(extra::utf16ToUtf8(fname).c_str(), std::ios::binary | std::ios::out);
-#endif
     file.write((const char*)data.data(), data.size());
+#endif
 }
 
 inline FILE* open(const wchar_t* path, const wchar_t* mode)
 {
-#if NVIGI_WINDOWS    
+#ifdef NVIGI_WINDOWS
     FILE* file = _wfsopen(path, mode, _SH_DENYNO);
-#else
-    FILE* file = fopen(extra::utf16ToUtf8(path).c_str(), extra::utf16ToUtf8(mode).c_str());
-#endif
     if (!file)
     {
         if (errno != ENOENT)
@@ -81,6 +73,9 @@ inline FILE* open(const wchar_t* path, const wchar_t* mode)
         }
     }
     return file;
+#else
+    return nullptr;
+#endif
 }
 
 inline void flush(FILE* file)
@@ -156,11 +151,7 @@ inline std::vector<uint8_t> read(const char* fname)
     fs::path p(fname);
     size_t file_size = fs::file_size(p);
     std::vector<uint8_t> ret_buffer(file_size);
-#ifdef NVIGI_LINUX
     std::fstream file(fname, std::ios::binary | std::ios::in);
-#else
-    std::fstream file(fname, std::ios::binary | std::ios::in);
-#endif
     file.read((char*)ret_buffer.data(), file_size);
     return ret_buffer;
 }
@@ -170,12 +161,12 @@ inline std::vector<uint8_t> read(const wchar_t* fname)
     fs::path p(fname);
     size_t file_size = fs::file_size(p);
     std::vector<uint8_t> ret_buffer(file_size);
-#ifdef NVIGI_LINUX
-    std::fstream file(extra::toStr(fname), std::ios::binary | std::ios::in);
-#else
+#ifdef NVIGI_WINDOWS
     std::fstream file(fname, std::ios::binary | std::ios::in);
-#endif
     file.read((char*)ret_buffer.data(), file_size);
+#else
+    (void)file_size;
+#endif
     return ret_buffer;
 }
 
@@ -200,11 +191,10 @@ inline std::string getRealPath(const char* filename)
     char buffer[kMaxFilePath] = {};
     GetFinalPathNameByHandleA(file, buffer, kMaxFilePath, FILE_NAME_OPENED);
     CloseHandle(file);
-#else
-    char buffer[PATH_MAX] = {};
-    ::realpath(filename, buffer);
-#endif
     return std::string(buffer);
+#else
+    return std::string();
+#endif
 }
 
 
@@ -239,7 +229,7 @@ inline std::string removeExtension(const std::string& filename)
 inline bool remove(const wchar_t* path)
 {
     bool success = false;
-#if NVIGI_WINDOWS    
+#ifdef NVIGI_WINDOWS
     SHFILEOPSTRUCTW fileOperation;
     fileOperation.wFunc = FO_DELETE;
     fileOperation.pFrom = path;
@@ -254,17 +244,15 @@ inline bool remove(const wchar_t* path)
     {
         success = true;
     }
-
 #else
-    success = remove(path) == 0;
+    (void)path;
 #endif
-
     return success;
 }
 
 inline bool move(const wchar_t* from, const wchar_t* to)
 {
-#if NVIGI_WINDOWS
+#ifdef NVIGI_WINDOWS
     if (!MoveFileW(from, to))
     {
         NVIGI_LOG_ERROR( "File move failed: '%S' -> '%S' (error code %" PRIu32 ")", from, to, GetLastError());
@@ -272,12 +260,7 @@ inline bool move(const wchar_t* from, const wchar_t* to)
     }
     return true;
 #else
-    if (rename(extra::toStr(from).c_str(), extra::toStr(to).c_str()) < 0)
-    {
-        NVIGI_LOG_ERROR("File move failed: '%S' -> '%S' (%s)", from, to, strerror(errno));
-        return false;
-    }
-    return true;
+    return false;
 #endif
 }
 
@@ -308,50 +291,41 @@ inline std::wstring getModulePath()
 
 inline std::wstring getExecutablePath()
 {
-#ifdef NVIGI_LINUX
-    char exePath[PATH_MAX] = {};
-    ssize_t size = readlink("/proc/self/exe", exePath, sizeof(exePath));
-    (void)size;
-    std::wstring searchPathW = extra::toWStr(exePath);
-    searchPathW.erase(searchPathW.rfind('/'));
-    return searchPathW + L"/";
-#else
+#ifdef NVIGI_WINDOWS
     WCHAR pathAbsW[kMaxFilePath] = {};
     GetModuleFileNameW(GetModuleHandleA(NULL), pathAbsW, ARRAYSIZE(pathAbsW));
     std::wstring searchPathW = pathAbsW;
     searchPathW.erase(searchPathW.rfind('\\'));
     return searchPathW + L"\\";
+#else
+    return std::wstring();
 #endif
 }
 
 inline std::wstring getExecutableName()
 {
-#ifdef NVIGI_LINUX
-    char exePath[PATH_MAX] = {};
-    readlink("/proc/self/exe", exePath, sizeof(exePath));
-    return extra::toWStr(exePath);
-#else
+#ifdef NVIGI_WINDOWS
     WCHAR pathAbsW[kMaxFilePath] = {};
     GetModuleFileNameW(GetModuleHandleA(NULL), pathAbsW, ARRAYSIZE(pathAbsW));
     std::wstring searchPathW = pathAbsW;
     searchPathW = searchPathW.substr(searchPathW.rfind('\\') + 1);
     searchPathW.erase(searchPathW.rfind('.'));
     return searchPathW;
+#else
+    return std::wstring();
 #endif
 }
 
 inline std::wstring getExecutableNameAndExtension()
 {
-#ifdef NVIGI_LINUX
-    char exePath[PATH_MAX] = {};
-    readlink("/proc/self/exe", exePath, sizeof(exePath));
-    return extra::toWStr(exePath);
-#else
+#ifdef NVIGI_WINDOWS
     WCHAR pathAbsW[kMaxFilePath] = {};
     GetModuleFileNameW(GetModuleHandleA(NULL), pathAbsW, ARRAYSIZE(pathAbsW));
     std::wstring searchPathW = pathAbsW;
     searchPathW = searchPathW.substr(searchPathW.rfind('\\') + 1);
     return searchPathW;
+#else
+    return std::wstring();
 #endif
 }
 
@@ -465,9 +439,6 @@ inline void prependLongPathPrefix(std::u8string& _path)
             _path = ((const char8_t*)kWindowsLongPathPrefix) + _path;
         }
     }
-#else
-    // Reference unused parameters.
-    (void)_path;
 #endif
 }
 
