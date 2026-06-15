@@ -428,14 +428,15 @@ size_t enumeratePlugins(const char8_t* utf8Directory, bool validateDLLs, const n
             if (requestedFeature && info->id != *requestedFeature)
             {
                 //! If specific plugin is requested and this is not it just skip it.
-                //! 
+                //!
                 //! This is a NOP and below plugin just gets unloaded
             }
-            else if (!isInterfaceSameOrNewerVersion(info))
-            {
-                NVIGI_LOG_WARN("Plugin '%s' is older than the framework - skipping ...", name.c_str());
-                spec.status = kResultPluginOutOfDate;
-            }
+            //! NOTE: We intentionally do NOT reject plugins whose 'PluginInfo' is older than the framework's.
+            //!
+            //! 'PluginInfo' is a versioned structure (see nvigi_struct.h) so older plugins simply report a lower
+            //! version and omit the newer trailing members. We preserve backwards compatibility by always
+            //! checking 'info->getVersion()' before reading any v2+ member (see 'checkPluginMinSpec') and never
+            //! touching functionality that requires info the plugin did not provide.
             else if (ctx->modules.find(info->id) != ctx->modules.end())
             {
                 NVIGI_LOG_ERROR("Plugin '%s' has duplicated feature uid: %s crc24: 0x%x - skipping ...", name.c_str(), extra::guidToString(info->id.id).c_str(), info->id.crc24);
