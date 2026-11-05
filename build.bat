@@ -97,7 +97,15 @@ if not exist "%VS_PATH%" (
 
 for /f "delims=" %%F in ('dir /b /s "%VS_PATH%\vsdevcmd.bat" 2^>nul') do set VSDEVCMD_PATH=%%F
 echo ********Executing %VSDEVCMD_PATH%********
+if not defined VSDEVCMD_PATH (
+    echo ERROR: Visual Studio Developer Command Prompt script not found.
+    exit /b 1
+)
 call "%VSDEVCMD_PATH%"
+if errorlevel 1 (
+    echo ERROR: Visual Studio environment setup failed.
+    exit /b 1
+)
 goto :SetVSEnvFinished
 
 :ErrorExit
@@ -116,5 +124,10 @@ for %%p in (%platforms%) do (
         ) else (
             msbuild .\_project\vs2017\nvigicoresdk.sln /m /t:%bld% /property:Configuration=%%c /property:Platform=%%p
         )
+        if errorlevel 1 (
+            echo ERROR: Core build failed for %%c %%p.
+            exit /b 1
+        )
     )
 )
+exit /b 0

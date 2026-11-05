@@ -419,6 +419,16 @@ private:
 
 constexpr const char* kWindowsLongPathPrefix = "\\\\?\\";
 
+inline fs::path utf8ToPath(const char* utf8Path)
+{
+    return fs::path((const char8_t*)utf8Path);
+}
+
+inline fs::path utf8ToPath(const std::string& utf8Path)
+{
+    return utf8ToPath(utf8Path.c_str());
+}
+
 //! Converts incoming utf-8 path to an OS valid path (can be file of directory and it must exist)
 //! 
 //! On Linux there is not much to do but make sure correct slashes are used

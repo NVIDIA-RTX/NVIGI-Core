@@ -28,6 +28,9 @@
 	nvigi-core-source\docs\media/hybridai_api_instance.svg
 	nvigi-core-source\docs\media/hybridai_api_instance_eval.svg
 	nvigi-core-source\docs\media/hybridai_api_instance_pipeline.svg
+	nvigi-core-source\extras\llamacpp_CIG_patch/llama.cpp_modifications.patch
+	nvigi-core-source\extras\llamacpp_CIG_patch/llamacpp_CIG_patch.md
+	nvigi-core-source\extras\llamacpp_CIG_patch/setup.bat
 	nvigi-core-source\premake/premake.shared_config.lua
 	nvigi-core-source\premake/premake.shared_plugin.lua
 	nvigi-core-source\premake/premake.utils.lua
@@ -91,6 +94,13 @@
 	nvigi-core-source\source\plugins\nvigi.hwi\d3d12/premake.lua
 	nvigi-core-source\source\plugins\nvigi.hwi\d3d12/resource.h
 	nvigi-core-source\source\plugins\nvigi.hwi\d3d12/versions.h
+	nvigi-core-source\source\plugins\nvigi.hwi\vulkan/nvigi_hwi_vulkan.h
+	nvigi-core-source\source\plugins\nvigi.hwi\vulkan/plugin.rc
+	nvigi-core-source\source\plugins\nvigi.hwi\vulkan/premake.lua
+	nvigi-core-source\source\plugins\nvigi.hwi\vulkan/resource.h
+	nvigi-core-source\source\plugins\nvigi.hwi\vulkan/versions.h
+	nvigi-core-source\source\plugins\nvigi.hwi\vulkan/vulkanEntry.cpp
+	nvigi-core-source\source\plugins\nvigi.hwi\vulkan/vulkan_occupancy_priority.h
 	nvigi-core-source\source\plugins\nvigi.net/net.cpp
 	nvigi-core-source\source\plugins\nvigi.net/net.h
 	nvigi-core-source\source\plugins\nvigi.net/netEntry.cpp

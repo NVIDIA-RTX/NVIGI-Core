@@ -33,15 +33,15 @@ project "nvigi.test"
 -- NV_ARM64_BEGIN
 	filter {"system:windows", "platforms:arm64"}
 		includedirs {
-			externaldir .."cuda_arm64/include", 
-			externaldir .."cuda_arm64/extras/CUPTI/include", 
+			externaldir .."cuda/include", 
+			externaldir .."cuda/extras/CUPTI/include", 
 			externaldir .."cig_scheduler_settings_arm64/include",
 			externaldir .."vulkanSDK_arm64//Include"
 		}
 		libdirs {
 			-- Note: CUDA ARM64 support may be limited, check if these paths exist
-			externaldir .."cuda_arm64/lib/arm64", 
-			externaldir .."cuda_arm64/extras/CUPTI/lib/arm64",
+			externaldir .."cuda/lib/arm64", 
+			externaldir .."cuda/extras/CUPTI/lib/arm64",
 			externaldir .."vulkanSDK_arm64/Lib-ARM64"
 		}
 -- NV_ARM64_END
@@ -55,7 +55,7 @@ project "nvigi.test"
 		}
 		libdirs {
 			externaldir .."cuda//lib/x64", 
-			externaldir .."cuda/extras/CUPTI/lib64",
+			externaldir .."cuda/extras/CUPTI/lib/x64",
 			externaldir .."vulkanSDK/Lib"
 		}
 	filter {}

@@ -26,11 +26,11 @@ group "plugins/hwi"
 -- NV_ARM64_BEGIN
 		filter {"system:windows", "platforms:arm64"}
 			includedirs {
-				externaldir .. "nvapi_arm64",
+				externaldir .. "nvapi",
 				externaldir .."cig_scheduler_settings_arm64//include", 
 				"./"
 			}
-			links { ROOT .. "external/nvapi_arm64/aarch64/nvapia64.lib"}
+			links { ROOT .. "external/nvapi/aarch64/nvapia64.lib"}
 -- NV_ARM64_END
 		filter {}
 

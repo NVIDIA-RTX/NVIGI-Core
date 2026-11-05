@@ -105,6 +105,7 @@ struct test_params {
     nvigi::IHWICuda* icig{};
     bool hasNvidiaAdapter = false;
     bool useCiG = true;
+    bool n1x = false;
 };
 
 test_params params{};
@@ -568,7 +569,11 @@ int wmain(int argc, wchar_t** argv)
         
         | Opt(nvigi::params.depPath, "dependencies path")
         ["--dependencies"]
-        ("path to the nvigi dependencies");
+        ("path to the nvigi dependencies")
+
+        | Opt([&](bool) {nvigi::params.n1x = true;  })
+		["--n1x"]
+        ("running on N1x");
 
     // Now pass the new composite back to Catch so it uses that
     session.cli(cli);

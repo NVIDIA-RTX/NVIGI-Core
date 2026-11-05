@@ -278,4 +278,30 @@ TEST_CASE("processDirectory", "[ai][models]")
     }
 }
 
+TEST_CASE("ARMFlags", "[system][flags]")
+{
+    REQUIRE(nvigi::params.isystem != nullptr);
+    REQUIRE(nvigi::params.isystem->getSystemCaps != nullptr);
+
+    const nvigi::system::SystemCaps* caps = nvigi::params.isystem->getSystemCaps();
+    REQUIRE(caps != nullptr);
+
+    // Are we running on an N1x as per the command line?
+    if (nvigi::params.n1x)
+    {
+#ifdef _M_ARM64
+        REQUIRE(caps->flags & nvigi::SystemFlags::eARM64Native);
+        REQUIRE(!(caps->flags & nvigi::SystemFlags::eARM64Emu));
+#else
+        REQUIRE(caps->flags & nvigi::SystemFlags::eARM64Emu);
+        REQUIRE(!(caps->flags & nvigi::SystemFlags::eARM64Native));
+#endif
+    }
+    else
+    {
+        REQUIRE(!(caps->flags & nvigi::SystemFlags::eARM64Emu));
+        REQUIRE(!(caps->flags & nvigi::SystemFlags::eARM64Native));
+    }
+}
+
 #endif // NVIGI_WINDOWS

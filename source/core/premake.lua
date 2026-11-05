@@ -47,8 +47,8 @@ project "nvigi.core.framework"
 		linkoptions { "/DEF:" .. "\"" .. ROOT .. "source/core/nvigi.framework/exports.def\"" }
 -- NV_ARM64_BEGIN
 	filter {"system:windows", "platforms:arm64"}
-		includedirs {ROOT .. "external/nvapi_arm64"}
-		links {ROOT .. "external/nvapi_arm64/aarch64/nvapia64.lib"}
+		includedirs {ROOT .. "external/nvapi"}
+		links {ROOT .. "external/nvapi/aarch64/nvapia64.lib"}
 		links {"dxgi.lib", "Version.lib", "dbghelp.lib"}
 		linkoptions { "/DEF:" .. "\"" .. ROOT .. "source/core/nvigi.framework/exports.def\"" }
 -- NV_ARM64_END	

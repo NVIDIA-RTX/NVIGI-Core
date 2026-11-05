@@ -80,6 +80,8 @@ public:
             | check_for_cpu_cap(SSE)
             | check_for_cpu_cap(SSE2)
             | check_for_cpu_cap(AVX2)
+            | check_for_cpu_cap(ARM64Emu)
+            | check_for_cpu_cap(ARM64Native)
             | check_for_cpu_cap(SSE4a);
     }
 
@@ -95,6 +97,8 @@ public:
     static bool SSE2(void) { return CPU_Rep.f_1_EDX_[26]; }
     static bool AVX2(void) { return CPU_Rep.f_7_EBX_[5]; }
     static bool SSE4a(void) { return CPU_Rep.isAMD_ && CPU_Rep.f_81_ECX_[6]; }
+    static bool ARM64Emu(void) { return CPU_Rep.isARM64Emu_; }
+    static bool ARM64Native(void) { return CPU_Rep.isARM64Native_; }
 
 
 private:
@@ -108,6 +112,8 @@ private:
             nExIds_{ 0 },
             isIntel_{ false },
             isAMD_{ false },
+            isARM64Native_{ false },
+            isARM64Emu_{ false },
             f_1_ECX_{ 0 },
             f_1_EDX_{ 0 },
             f_7_EBX_{ 0 },
@@ -192,7 +198,31 @@ private:
                 memcpy(brand + 32, extdata_[4].data(), sizeof(cpui));
                 brand_ = brand;
             }
+
+            isARM64Native_ = false;
+            // Detect if the process is running under WoW64 (32-bit process on 64-bit Windows)
+            HMODULE hKernel32 = GetModuleHandle(TEXT("kernel32.dll"));
+            if (hKernel32)
+            {
+                typedef BOOL(*IsWow64Process2Type)(HANDLE, USHORT*, USHORT*);
+                IsWow64Process2Type IsWow64Process2Ptr = (IsWow64Process2Type)GetProcAddress(hKernel32, "IsWow64Process2");
+                if (IsWow64Process2Ptr)
+                {
+                    HANDLE process = GetCurrentProcess();
+                    USHORT processMachine = 0;
+                    USHORT nativeMachine = 0;
+                    if (IsWow64Process2Ptr(process, &processMachine, &nativeMachine))
+                    {
+                        if (nativeMachine == IMAGE_FILE_MACHINE_ARM64)
+                            isARM64Emu_ = true;
+                    }
+                }
+            }
+
             // NV_ARM64_BEGIN
+#else
+            isARM64Native_ = true;
+            isARM64Emu_ = false;
 #endif
             // NV_ARM64_END
         };
@@ -203,6 +233,8 @@ private:
         std::string brand_;
         bool isIntel_;
         bool isAMD_;
+        bool isARM64Native_;
+        bool isARM64Emu_;
         std::bitset<32> f_1_ECX_;
         std::bitset<32> f_1_EDX_;
         std::bitset<32> f_7_EBX_;

@@ -2,8 +2,9 @@
 :: SPDX-License-Identifier: MIT
 
 @echo off
+setlocal EnableDelayedExpansion
 set cfg=vs2022
-set platforms=--x64
+set platforms=
 set comps=""
 :loop
 IF NOT "%1"=="" (
@@ -15,12 +16,18 @@ IF NOT "%1"=="" (
         SET comps=-components %2
         SHIFT
     ) ELSE IF "%1"=="-x64" (
-        REM For now, overwrite any other platfom - one platform at a time for now
-        SET platforms=--x64
+        IF "%platforms%"=="" (
+            SET platforms=--x64
+        ) else (
+            SET platforms=%platforms% --x64
+        )
 REM NV_ARM64_BEGIN
     ) ELSE IF "%1"=="-arm64" (
-        REM For now, overwrite any other platfom - one platform at a time for now
-        SET platforms=--arm64
+        IF "%platforms%"=="" (
+            SET platforms=--arm64
+        ) else (
+            SET platforms=%platforms% --arm64
+        )
 REM NV_ARM64_END
     ) ELSE (
         REM Unrecognized switch, print error message and exit
@@ -29,6 +36,10 @@ REM NV_ARM64_END
     )
     SHIFT
     GOTO :loop
+)
+
+IF "%platforms%"=="" (
+    SET platforms=--x64
 )
 
 ECHO Setting up for Platform %platforms%
@@ -43,9 +54,28 @@ IF "%cfg%"=="" (
 
 REM Pull the basic tools we need for the next steps
 call .\tools\packman\packman.cmd pull -p windows-x86_64 .\tools\project.tools.xml
+if errorlevel 1 (
+    echo ERROR: Build-tool dependency download failed.
+    exit /b 1
+)
 
-if exist .\scripts\setup_extra.bat call .\scripts\setup_extra.bat %platforms% %comps:"=%
-if exist project.xml call .\tools\packman\packman.cmd pull -p windows-x86_64 project.xml
+if exist .\scripts\setup_extra.bat (
+    call .\scripts\setup_extra.bat %platforms% %comps:"=%
+    if errorlevel 1 exit /b 1
+)
+if exist project.xml (
+    call .\tools\packman\packman.cmd pull -p windows-x86_64 project.xml
+    if errorlevel 1 (
+        echo ERROR: Project dependency download failed.
+        exit /b 1
+    )
+)
 
 echo Creating project files for %cfg%
 call .\tools\premake5\premake5.exe %cfg% %platforms% --file=.\premake.lua
+if errorlevel 1 (
+    echo ERROR: Project generation failed.
+    exit /b 1
+)
+
+exit /b 0

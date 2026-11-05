@@ -1397,6 +1397,17 @@ namespace CIGCompatibilityChecker
     public:
         ScopedChecker() = default;
 
+#if WITHOUT_IGI
+        ScopedChecker(bool enabled, int ordinalOfRequestedCudaDevice = -1)
+        {
+            if (enabled)
+            {
+                requestedCudaDeviceOrdinal = ordinalOfRequestedCudaDevice;
+                CIGCompatibilityChecker::init(true);
+                initialized = true;
+            }
+        }
+#else
         ScopedChecker(bool enabled, PFun_nvigiLoadInterface* nvigiLoadInterface, PFun_nvigiUnloadInterface* nvigiUnloadInterface, int ordinalOfRequestedCudaDevice = -1)
         {
             if (enabled)
@@ -1406,6 +1417,7 @@ namespace CIGCompatibilityChecker
                 initialized = true;
             }
         }
+#endif
 
         // The checker controls process-global CUPTI subscription state, not a
         // private resource. Keep ownership local to a single scope so cleanup
@@ -1443,14 +1455,27 @@ namespace CIGCompatibilityChecker
             }
         }
 
+#if WITHOUT_IGI
+        const CigD3d12Parameters& getD3D12Parameters() const
+        {
+            assert(initialized);
+            return gD3dParameters;
+        }
+#else
         const nvigi::D3D12Parameters& getD3D12Parameters() const
         {
             assert(initialized);
             return d3d12Parameters;
         }
+#endif
 
     private:
+#if !WITHOUT_IGI
+        // NvIGI init returns D3D12 parameters to the caller, so ScopedChecker
+        // stores its own copy. In WITHOUT_IGI mode the standalone D3D objects
+        // live in namespace-global gD3dParameters instead.
         nvigi::D3D12Parameters d3d12Parameters{};
+#endif
         int requestedCudaDeviceOrdinal = -1;
         bool initialized = false;
     };

@@ -110,6 +110,8 @@ inline std::string toStr(SystemFlags flag)
     case SystemFlags::eAVX: return "AVX";
     case SystemFlags::eAVX2: return "AVX2";
     case SystemFlags::eMMX: return "MMX";
+    case SystemFlags::eARM64Native: return "ARM64Native";
+    case SystemFlags::eARM64Emu: return "ARM64Emu";
     }
     assert(false && "please update this method to cover for unknown enum flags.");
     return "Unknown";
@@ -129,6 +131,8 @@ inline std::wstring toWStr(SystemFlags flag)
     case SystemFlags::eAVX: return L"AVX";
     case SystemFlags::eAVX2: return L"AVX2";
     case SystemFlags::eMMX: return L"MMX";
+    case SystemFlags::eARM64Native: return L"ARM64Native";
+    case SystemFlags::eARM64Emu: return L"ARM64Emu";
     }
     assert(false && "please update this method to cover for unknown enum flags.");
     return L"Unknown";

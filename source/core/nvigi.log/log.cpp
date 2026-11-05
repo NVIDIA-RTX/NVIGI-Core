@@ -3,6 +3,7 @@
 //
 
 #include <iomanip>
+#include <locale.h>
 #include <map>
 
 #include "source/core/nvigi.api/nvigi.h"
@@ -165,8 +166,17 @@ struct Log
     FILE* m_file = {};
     PFun_LogMessageCallback* m_logMessageCallback = {};
     Result m_result = kResultOk;
+    _locale_t m_utf8Locale = {};
 
-    Log() {}
+    Log() : m_utf8Locale(_create_locale(LC_CTYPE, ".65001")) {}
+
+    ~Log()
+    {
+        if (m_utf8Locale)
+        {
+            _free_locale(m_utf8Locale);
+        }
+    }
 
     void print(ConsoleForeground color, LogType type, const std::string &logMessage)
     {
@@ -355,7 +365,7 @@ Result setupLogging()
             if (ctx.m_file)
             {
                 // Do not reset log file if paths are pointing to the same location
-                auto p2 = fs::path(ctx.m_filePath);
+                auto p2 = file::utf8ToPath(ctx.m_filePath);
                 if (p1 != p2)
                 {
                     fflush(ctx.m_file);
@@ -370,22 +380,22 @@ Result setupLogging()
     if (!ctx.m_file && !ctx.m_path.empty() && !ctx.m_pathInvalid)
     {
         ctx.m_filePath = ctx.m_path;
-        auto path = fs::path(ctx.m_path) / ctx.m_name;
-        auto oldLocale = setlocale(LC_ALL, ".65001"); // utf-8
+        auto path = file::utf8ToPath(ctx.m_path) / file::utf8ToPath(ctx.m_name);
+        const auto pathUtf8 = path.u8string();
+        const std::string pathString((const char*)pathUtf8.data(), pathUtf8.size());
         // Allow other process to read log file
-        ctx.m_file = _fsopen(path.string().c_str(), "wt", _SH_DENYWR);
-        setlocale(LC_ALL, oldLocale);
+        ctx.m_file = _wfsopen(path.c_str(), L"wt", _SH_DENYWR);
         if (!ctx.m_file)
         {
             ctx.m_pathInvalid = true;
             ctx.m_filePath.clear();
             ctx.m_result = kResultInvalidParameter;
-            std::string completeLogMessageLocal = generateHeader(__FILE__, __LINE__, __func__, (int)LogType::eError, nullptr) + "Failed to open log file '" + path.string() + "'\n";
+            std::string completeLogMessageLocal = generateHeader(__FILE__, __LINE__, __func__, (int)LogType::eError, nullptr) + "Failed to open log file '" + pathString + "'\n";
             ctx.print(RED, LogType::eError, completeLogMessageLocal);
         }
         else
         {
-            std::string completeLogMessageLocal = generateHeader(__FILE__, __LINE__, __func__, (int)LogType::eInfo, nullptr) + "Log file '" + path.string() + "' opened on " + getCurrentDateTime() + "\n";
+            std::string completeLogMessageLocal = generateHeader(__FILE__, __LINE__, __func__, (int)LogType::eInfo, nullptr) + "Log file '" + pathString + "' opened on " + getCurrentDateTime() + "\n";
             ctx.print(WHITE, LogType::eInfo, completeLogMessageLocal);
         }
     }
@@ -442,7 +452,7 @@ void logva(uint32_t level, ConsoleForeground color, const char* _file, int line,
         extra::ScopedTasks onExit([&]() { va_end(args); va_end(args1); });
 
         // Determine the required size of the formatted message (without null-terminator)
-        int msgSize = std::vsnprintf(nullptr, 0, _fmt, args); //_vscprintf(_fmt, args);
+        int msgSize = ctx->m_utf8Locale ? _vscprintf_l(_fmt, ctx->m_utf8Locale, args) : std::vsnprintf(nullptr, 0, _fmt, args);
         if (msgSize >= 1)
         {
             // Account for the null terminator char
@@ -450,7 +460,7 @@ void logva(uint32_t level, ConsoleForeground color, const char* _file, int line,
             message.resize(msgSize);
 
             // Format the message
-            msgSize = std::vsnprintf(message.data(), message.size(), _fmt, args1);
+            msgSize = ctx->m_utf8Locale ? _vsnprintf_l(message.data(), message.size(), _fmt, ctx->m_utf8Locale, args1) : std::vsnprintf(message.data(), message.size(), _fmt, args1);
 
             if (msgSize <= 0)
             {

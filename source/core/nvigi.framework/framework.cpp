@@ -784,7 +784,7 @@ nvigi::Result nvigiInitImpl(const nvigi::Preferences& pref, nvigi::PluginAndSyst
         if (!nvigi::file::getOSValidDirectoryPath(pref.utf8PathToDependencies, ctx->utf8PathToDependencies))
         {
             // NOTE: always log paths as unicode, fs::path constructor does NOT throw exceptions
-            NVIGI_LOG_ERROR("Provided path '%S' is not valid", fs::path(pref.utf8PathToDependencies).wstring().c_str());
+            NVIGI_LOG_ERROR("Provided path '%S' is not valid", nvigi::file::utf8ToPath(pref.utf8PathToDependencies).wstring().c_str());
             return nvigi::kResultInvalidParameter;
         }
         // At this point 'ctx->utf8PathToDependencies' is absolute, normalized and "long" if over MAX_PATH on Win11 and it points to a valid directory
@@ -821,14 +821,15 @@ nvigi::Result nvigiInitImpl(const nvigi::Preferences& pref, nvigi::PluginAndSyst
 #ifndef NVIGI_PRODUCTION
     if (!ctx->utf8PathToPlugins.empty())
     {
-        if (!fs::is_directory(ctx->utf8PathToPlugins))
+        if (!fs::is_directory(nvigi::file::utf8ToPath(ctx->utf8PathToPlugins)))
         {
             // This can happen in ReShade, if we use relative path but app sets working directory to something else SDK will fail to find plugins
             NVIGI_LOG_WARN("'%s' is NOT a valid directory, trying as relative path to the executable ...", ctx->utf8PathToPlugins.c_str());
             fs::path pathToPlugins(nvigi::file::getExecutablePath() + nvigi::extra::utf8ToUtf16(ctx->utf8PathToPlugins.c_str()));
             if (fs::is_directory(pathToPlugins))
             {
-                ctx->utf8PathToPlugins = pathToPlugins.string();
+                const auto pathToPluginsUtf8 = pathToPlugins.u8string();
+                ctx->utf8PathToPlugins.assign((const char*)pathToPluginsUtf8.data(), pathToPluginsUtf8.size());
             }
             else
             {
@@ -855,11 +856,11 @@ nvigi::Result nvigiInitImpl(const nvigi::Preferences& pref, nvigi::PluginAndSyst
             if (!nvigi::file::getOSValidDirectoryPath(pref.utf8PathsToPlugins[i], utf8Path))
             {
                 // NOTE: always log paths as unicode, fs::path constructor does NOT throw exceptions
-                NVIGI_LOG_ERROR("Provided path '%S' is not valid", fs::path(pref.utf8PathsToPlugins[i]).wstring().c_str());
+                NVIGI_LOG_ERROR("Provided path '%S' is not valid", nvigi::file::utf8ToPath(pref.utf8PathsToPlugins[i]).wstring().c_str());
                 return nvigi::kResultInvalidParameter;
             }
             // At this point path to plugins is absolute, normalized and "long" if over MAX_PATH on Win11 and it points to a valid directory
-            auto path = fs::path(utf8Path);
+            auto path = nvigi::file::utf8ToPath(utf8Path);
             // We don't want to visit same path multiple times
             if (std::find(visited.begin(), visited.end(), path) != visited.end())
             {
@@ -877,9 +878,10 @@ nvigi::Result nvigiInitImpl(const nvigi::Preferences& pref, nvigi::PluginAndSyst
         if (!ctx->utf8PathToDependencies.empty())
         {
             // We don't expect any plugins to be in the dependencies directory so let's check that also
-            if (std::find(visited.begin(), visited.end(), ctx->utf8PathToDependencies) == visited.end())
+            auto dependenciesPath = nvigi::file::utf8ToPath(ctx->utf8PathToDependencies);
+            if (std::find(visited.begin(), visited.end(), dependenciesPath) == visited.end())
             {
-                visited.push_back(ctx->utf8PathToDependencies);
+                visited.push_back(dependenciesPath);
             }
         }
         // Make sure provided paths from the host side do not contain duplicated shared libraries
@@ -1042,11 +1044,11 @@ nvigi::Result nvigiLoadInterfaceImpl(nvigi::PluginID feature, const nvigi::UID& 
             if (!nvigi::file::getOSValidDirectoryPath(utf8PathToPlugin, utf8Path))
             {
                 // NOTE: always log paths as unicode, fs::path constructor does NOT throw exceptions
-                NVIGI_LOG_ERROR("Provided path '%S' is not valid", fs::path(utf8PathToPlugin).wstring().c_str());
+                NVIGI_LOG_ERROR("Provided path '%S' is not valid", nvigi::file::utf8ToPath(utf8PathToPlugin).wstring().c_str());
                 return nvigi::kResultInvalidParameter;
             }
             // At this point path is absolute, normalized and "long" if over MAX_PATH on Win11 and it points to a valid directory
-            auto path = fs::path(utf8Path);
+            auto path = nvigi::file::utf8ToPath(utf8Path);
             if (!enumeratePlugins(path.u8string().c_str(), true, &feature))
             {
                 NVIGI_LOG_WARN("No new plugins found or loaded from the provided path '%S' when requesting interface {%s}", path.wstring().c_str(), nvigi::extra::guidToString(type).c_str());

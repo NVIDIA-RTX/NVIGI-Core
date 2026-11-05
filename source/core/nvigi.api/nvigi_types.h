@@ -154,6 +154,8 @@ enum class SystemFlags : uint64_t
     eAVX = 1ull << 8,
     eAVX2 = 1ull << 9,
     eMMX = 1ull << 10,
+	eARM64Native = 1ull << 11,
+	eARM64Emu = 1ull << 12,
 };
 
 NVIGI_ENUM_OPERATORS_64(SystemFlags);

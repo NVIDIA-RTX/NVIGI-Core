@@ -21,28 +21,20 @@ catch2_ext = [{"dep":"catch2", "target":"all", "path":"external/catch2",
                     "name":"catch2", "version":"2.13.9-7011809a","host_platform":"windows-x86_64"},
 ]
 
-cuda_ext =[{"dep":"cuda", "target":"win-x64", "path":"external/cuda", 
-                 "name":"cuda", "version":"v12.8.0-windows-x64","host_platform":"windows-x86_64"},
-# NV_ARM64_BEGIN
-           {"dep":"cuda_arm64", "target":"win-arm64", "path":"external/cuda_arm64", 
-                 "name":"cuda", "version":"v13.4-dev-prev-x64-arm64","host_platform":"windows-x86_64"}
-# NV_ARM64_END
+cuda_ext =[{"dep":"cuda", "target":"all", "path":"external/cuda", 
+                 "name":"cuda", "version":"v13.4.1-windows-x64","host_platform":"windows-x86_64"},
 ]
 
 cig_scheduler_settings_ext = [{"dep":"cig_scheduler_settings", "target":"win-x64", "path":"external/cig_scheduler_settings", 
-                           "name":"cig_scheduler_settings_win64", "version":"202607221930-fa6ebe89-main","host_platform":"windows-x86_64"},
+                           "name":"cig_scheduler_settings_win64", "version":"202609152014-f4af095c-main","host_platform":"windows-x86_64"},
 # NV_ARM64_BEGIN
                               {"dep":"cig_scheduler_settings_arm64", "target":"win-arm64", "path":"external/cig_scheduler_settings_arm64", 
-                           "name":"cig_scheduler_settings_win_internal", "version":"202607221930-fa6ebe89-main","host_platform":"windows-x86_64"}
+                           "name":"cig_scheduler_settings_win_internal", "version":"202609152014-f4af095c-main","host_platform":"windows-x86_64"}
 # NV_ARM64_END
 ]
 
-nvapi_ext = [{"dep":"nvapi", "target":"win-x64", "path":"external/nvapi", 
-                   "name":"nvapi", "version":"r575-public-windows-x86_64","host_platform":"windows-x86_64"},
-# NV_ARM64_BEGIN
-             {"dep":"nvapi_arm64", "target":"win-arm64", "path":"external/nvapi_arm64", 
-                   "name":"nvapi_internal_x64_aarch64", "version":"580.87","host_platform":"windows-x86_64"}
-# NV_ARM64_END
+nvapi_ext = [{"dep":"nvapi", "target":"all", "path":"external/nvapi", 
+                   "name":"nvapi", "version":"r615-dev","host_platform":"windows-x86_64"},
 ]
 
 agility_sdk_ext = [{"dep":"agility-sdk-code", "target":"all", "path":"external/agility-sdk",
@@ -70,18 +62,18 @@ zlib_ext = [{"dep":"zlib", "target":"win-x64", "path":"external/zlib",
                   "name":"zlib", "version":"1.3.1_x64-windows","host_platform":"windows-x86_64"},
 ]
 
-cudaDlls = {'win-x64':[ 'external/cuda/bin/cudart64_12.dll' ],
+cudaDlls = {'win-x64':[ 'external/cuda/bin/x64/cudart64_13.dll' ],
 # NV_ARM64_BEGIN
-              'win-arm64':[ 'external/cuda_arm64/bin/arm64/cudart64_13.dll' ]
+              'win-arm64':[ 'external/cuda/bin/arm64/cudart64_13.dll' ]
 # NV_ARM64_END
 }
 
 cuptiDlls =  {'win-x64':[
-    'external/cuda/extras/CUPTI/lib64/cupti64_2025.1.0.dll',
+    'external/cuda/extras/CUPTI/lib/x64/cupti64_2026.3.0.dll',
     'external/cig_scheduler_settings/bin/Release_x64/cig_scheduler_settings.dll'],
 # NV_ARM64_BEGIN
     'win-arm64':[
-        'external/cuda_arm64/extras/CUPTI/lib/arm64/cupti64_2026.3.0.dll',
+        'external/cuda/extras/CUPTI/lib/arm64/cupti64_2026.3.0.dll',
         'external/cig_scheduler_settings_arm64/bin/Release_arm64/cig_scheduler_settings.dll']
 # NV_ARM64_END
 }
@@ -147,6 +139,14 @@ all_components = {
         'externals': [cig_scheduler_settings_ext],
         'premake': 'source/plugins/nvigi.hwi/d3d12/premake.lua' 
     },
+    'plugin.hwi.vulkan' : {
+        'platforms': all_plat,
+        'sharedlib': ['nvigi.plugin.hwi.vulkan'],
+        'includes': ['source/plugins/nvigi.hwi/vulkan/nvigi_hwi_vulkan.h'],
+        'sources': ['plugins/nvigi.hwi/vulkan', 'shared'],
+        'externals': [vulkan_ext],
+        'premake': 'source/plugins/nvigi.hwi/vulkan/premake.lua'
+    },
     'plugin.net': {
         'platforms': ['win-x64'],
         '3rdparty': net_dlls,
@@ -194,6 +194,7 @@ runtime_components = [
     'plugin.hwi.common',
     'plugin.hwi.cuda',
     'plugin.hwi.d3d12',
+    'plugin.hwi.vulkan',
     'plugin.template.generic',
     'plugin.template.inference',
     'test',
@@ -210,6 +211,7 @@ pdk_source_components = [
     'plugin.hwi.common',
     'plugin.hwi.cuda',
     'plugin.hwi.d3d12',
+    'plugin.hwi.vulkan',
     'plugin.net',
     'test',
     'tool.utils'
@@ -422,10 +424,6 @@ if __name__ == '__main__':
     if args.platforms is None or len(args.platforms) == 0:
        args.platforms = ['win-x64']
 
-    if len(args.platforms) > 1:
-        print(f'Currently, only one platform can be configured at a time: specified platforms were {args.platforms}')
-        sys.exit(-1)
-
     print (f'Prepping/Packing platforms: {args.platforms}')
 
     if args.build_modes is None:
@@ -574,6 +572,14 @@ if __name__ == '__main__':
                         copy_list.append((ext[0], dest_bin/ext[1], component))
                     else:
                         copy_list.append((ext, dest_bin, component))
+
+    extras_dir = Path('extras/llamacpp_CIG_patch')
+    for filename in (
+        'setup.bat',
+        'llamacpp_CIG_patch.md',
+        'llama.cpp_modifications.patch',
+    ):
+        copy_list.append((src/extras_dir/filename, dest_root/extras_dir, 'core.framework'))
 
     if args.config == 'runtime':
         # Includes: Stage the copies

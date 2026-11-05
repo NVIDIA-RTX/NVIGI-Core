@@ -322,7 +322,7 @@ inline net::Parameters createSecureParams(const std::string& url)
 inline json createChatCompletionBody(const std::string& userMessage, bool stream = false)
 {
     return json::parse(R"({
-        "model": "meta/llama-3.1-8b-instruct",
+        "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
         "messages": [
             {
                 "role": "system",
@@ -559,7 +559,7 @@ TEST_CASE("net_nvidia_chat_api", "[net][api][nvidia]")
     
     // Create request body using your exact JSON format
     json body = R"({
-        "model" : "meta/llama-3.1-8b-instruct",
+        "model" : "nvidia/nemotron-3.5-lightning-30b-a3b",
         "messages": [
             {
                 "role":"system",
